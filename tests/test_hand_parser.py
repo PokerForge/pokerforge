@@ -134,3 +134,41 @@ def test_parse_hand_history_file_isolates_one_bad_hand():
     assert [h.hand_id for h in hands] == ["1234567890", "1234567891"]
     assert len(errors) == 1
     assert errors[0][0] == "999"
+
+
+HAND_MULTIPLE_WINS_SAME_PLAYER = """\
+GAME #1234567892: Texas Hold'em NL £0.15/£0.30 2026-09-05 20:25:00/GMT
+Table UK&Ire 6-max 0.15/0.30, 1234567892
+Table Info: Size: 3
+Seat 1: Hero (£30.00 in chips) DEALER
+Seat 2: Villain1 (£10.00 in chips)
+Seat 3: Villain2 (£30.00 in chips)
+Villain1: Post SB £0.15
+Villain2: Post BB £0.30
+*** HOLE CARDS ***
+Dealt to Hero [SA HK]
+Hero: Raise £10.00
+Villain1: Allin £9.85
+Villain2: Call £9.70
+*** SUMMARY ***
+Total pot £30.00 Rake £0.50
+Hero: wins £15.00
+Hero: wins £14.50
+"""
+
+
+def test_multiple_wins_lines_for_the_same_player_are_summed_not_overwritten():
+    """A player who wins BOTH the main pot and a side pot in the same hand
+    (a 3-way all-in where one player is short-stacked) produces more than
+    one "PlayerX: wins ..." line for that player. This must add up to
+    their true total, not just keep the last one seen.
+
+    NOTE: this locks in the existing summing behavior (winnings.get(...)
+    + amt, not an overwrite) against regression, but the exact wording
+    iPoker actually uses for a real side-pot summary hasn't been
+    confirmed against a real export with an actual side pot — same
+    "never guess, always validate" caveat this project applies elsewhere
+    (see core/folder_detect.py). If a real side-pot export ever surfaces,
+    it should be checked against this assumption."""
+    hand = parse_hand_history(HAND_MULTIPLE_WINS_SAME_PLAYER)
+    assert hand.winnings["Hero"] == pytest.approx(29.50)

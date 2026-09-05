@@ -85,3 +85,47 @@ def test_empty_username_is_rejected(qapp, monkeypatch):
     assert warn_calls == [True]
     assert restart_calls == []
     assert get_hero_name() == "OldName"  # unchanged
+
+
+def test_auto_refresh_defaults_to_enabled(qapp):
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog()
+    assert dlg.auto_refresh_cb.isChecked() is True
+
+
+def test_toggling_auto_refresh_alone_saves_without_restarting(qapp, monkeypatch):
+    """A pure auto-refresh toggle, with hero/currency untouched, must not
+    trigger the app-restart flow that only hero/currency changes need."""
+    from config.settings import get_live_auto_refresh_enabled, set_hero_name, set_currency_symbol
+    import ui.settings_dialog as mod
+
+    set_hero_name("ExistingHero")
+    set_currency_symbol("£")
+
+    restart_calls = []
+    monkeypatch.setattr(mod, "restart_app", lambda: restart_calls.append(True))
+
+    dlg = mod.SettingsDialog()
+    dlg.auto_refresh_cb.setChecked(False)
+    dlg._on_save()
+
+    assert get_live_auto_refresh_enabled() is False
+    assert restart_calls == []
+    assert dlg.result() == 1  # accepted — the change was actually saved
+
+
+def test_auto_refresh_toggle_persists_alongside_a_restart_triggering_change(qapp, monkeypatch):
+    from config.settings import get_live_auto_refresh_enabled, set_hero_name, set_currency_symbol
+    import ui.settings_dialog as mod
+
+    set_hero_name("OldName")
+    set_currency_symbol("£")
+    monkeypatch.setattr(mod, "restart_app", lambda: None)
+    monkeypatch.setattr(mod.QMessageBox, "information", staticmethod(lambda *a, **k: None))
+
+    dlg = mod.SettingsDialog()
+    dlg.hero_edit.setText("NewName")
+    dlg.auto_refresh_cb.setChecked(False)
+    dlg._on_save()
+
+    assert get_live_auto_refresh_enabled() is False

@@ -6,6 +6,7 @@ of it by hand themselves)."""
 import pytest
 
 from config.version import APP_VERSION
+from core.currency import FX_RATES_AS_OF
 
 
 @pytest.fixture()
@@ -32,6 +33,7 @@ def test_copy_diagnostic_info_puts_key_facts_on_clipboard(qapp, db):
     assert "Hands in database: 0" in copied
     assert "Log file:" in copied
     assert "Database file:" in copied
+    assert FX_RATES_AS_OF in copied
 
 
 def test_view_log_button_disabled_when_no_log_file_exists(qapp, db, monkeypatch, tmp_path):

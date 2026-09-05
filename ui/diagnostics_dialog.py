@@ -12,6 +12,7 @@ from ui.theme import STYLE, lbl
 from config.paths import profile_data_dir
 from config.version import APP_VERSION
 from core.logging_setup import LOG_PATH
+from core.currency import FX_RATES_AS_OF
 
 
 class DiagnosticsDialog(QDialog):
@@ -35,6 +36,9 @@ class DiagnosticsDialog(QDialog):
         lay.addWidget(lbl(f"Database size: {db_size_mb:,.1f} MB", size=12, dim=True))
         lay.addWidget(lbl(f"Database file:  {db_path}", size=12, dim=True))
         lay.addWidget(lbl(f"Log file:  {LOG_PATH}", size=12, dim=True))
+        lay.addWidget(lbl(
+            f"Exchange rates as of:  {FX_RATES_AS_OF}  (fixed snapshot — see core/currency.py)",
+            size=12, dim=True))
         lay.addStretch()
 
         self._diagnostic_text = (
@@ -43,7 +47,8 @@ class DiagnosticsDialog(QDialog):
             f"Hands in database: {hand_count:,}\n"
             f"Database size: {db_size_mb:,.1f} MB\n"
             f"Database file: {db_path}\n"
-            f"Log file: {LOG_PATH}"
+            f"Log file: {LOG_PATH}\n"
+            f"Exchange rates as of: {FX_RATES_AS_OF}"
         )
 
         button_row = QHBoxLayout()

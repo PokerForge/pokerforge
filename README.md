@@ -86,6 +86,25 @@ separate step (see "Known limitations" below), not because of anything
 the app does. To proceed anyway: click **More info**, then **Run anyway**.
 This warning goes away once the build is signed.
 
+**For whoever's distributing this build** — two things help before
+code-signing happens (neither replaces it, but both reduce how alarming
+the warning looks for a new user):
+
+- Submit each release build to Microsoft for a reputation review at
+  <https://www.microsoft.com/en-us/wdsi/filesubmission> ("Software
+  developer" submission type) — this doesn't remove the "unrecognized
+  publisher" warning by itself, but it does clear the build of being
+  mistaken for actual malware, and repeated clean submissions from the
+  same publisher build reputation over time.
+- SmartScreen's reputation is partly about the FILE ITSELF (a fresh
+  build every release starts back at zero reputation) — an unsigned
+  build that changes with every release will basically always trigger
+  this on a brand new machine, no matter how long the app has existed.
+  Code signing (a real certificate, not just Microsoft's own review) is
+  the only way to actually skip the cold-start problem release after
+  release, which is why it's still listed separately under "Known
+  limitations" rather than something this step replaces.
+
 ## Project layout
 
 - `core/` — hand-history parsing, the stat engine, position logic,

@@ -2,6 +2,7 @@
 hardcoded in source (this app is meant to be used by more than one person,
 each with their own hero identity/aliases and display preferences)."""
 import json
+import os
 
 from config.paths import profile_data_dir
 
@@ -17,6 +18,8 @@ _DEFAULTS = {
     "hand_history_dirs": [],
     "last_seen_version": None,
     "license_key": None,
+    "live_auto_refresh_enabled": True,
+    "last_auto_backup_date": None,
 }
 
 
@@ -32,7 +35,17 @@ def load_settings() -> dict:
 
 
 def save_settings(settings: dict):
-    SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    """Writes via a temp file + os.replace() rather than a direct
+    write_text() — the direct version truncates the file to zero bytes
+    before writing the new content, so a crash, power loss, or forced
+    quit at exactly the wrong moment (settings are saved surprisingly
+    often: every hero-alias addition, every filter tweak in some dialogs)
+    would leave a corrupt/empty settings.json behind. os.replace() is
+    atomic on both Windows and POSIX — the old file stays intact and
+    fully readable right up until the new one is completely written."""
+    tmp_path = SETTINGS_PATH.with_suffix(SETTINGS_PATH.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    os.replace(tmp_path, SETTINGS_PATH)
 
 
 def get_hero_aliases() -> list[str]:
@@ -146,4 +159,32 @@ def get_license_key() -> str | None:
 def set_license_key(key: str | None):
     settings = load_settings()
     settings["license_key"] = key
+    save_settings(settings)
+
+
+def get_live_auto_refresh_enabled() -> bool:
+    """Whether AppWindow's LiveFolderWatcher (ui/live_watcher.py) should
+    watch the configured hand-history folders and import new hands
+    automatically while the app stays open — on by default, with an
+    off switch in Settings in case it's ever disruptive for someone's
+    setup (e.g. a network drive that fires spurious change events)."""
+    return load_settings().get("live_auto_refresh_enabled", True)
+
+
+def set_live_auto_refresh_enabled(enabled: bool):
+    settings = load_settings()
+    settings["live_auto_refresh_enabled"] = enabled
+    save_settings(settings)
+
+
+def get_last_auto_backup_date() -> str | None:
+    """See core/backup.py's create_auto_backup_if_due — the date (ISO
+    string) an automatic safety-net snapshot was last taken, so it only
+    happens once per calendar day."""
+    return load_settings().get("last_auto_backup_date")
+
+
+def set_last_auto_backup_date(date_str: str):
+    settings = load_settings()
+    settings["last_auto_backup_date"] = date_str
     save_settings(settings)

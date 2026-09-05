@@ -36,7 +36,7 @@ from core.logging_setup import configure_logging, install_crash_handler, LOG_PAT
 from core.single_instance import acquire_single_instance_lock
 from config.version import APP_VERSION, SUPPORT_EMAIL
 from core.update_checker import check_for_update
-from core.backup import create_backup, restore_backup
+from core.backup import create_backup, restore_backup, create_auto_backup_if_due
 from core.db_health import check_database_health
 from config.paths import profile_data_dir, resource_dir
 from ui.theme import STYLE, BG, BG2, GREEN, BORDER, lbl
@@ -56,6 +56,7 @@ from ui.getting_started_dialog import GettingStartedDialog
 from ui.diagnostics_dialog import DiagnosticsDialog
 from ui.whats_new_dialog import WhatsNewDialog
 from core.changelog import get_changelog_entry
+from ui.live_watcher import LiveFolderWatcher
 from config.profiles import get_active_display_name
 from core.currency import convert_hands_to_usd
 from database.repository import PokerDatabase
@@ -64,6 +65,8 @@ from config.settings import (
     get_hero_name, set_hero_name, get_currency_symbol, set_currency_symbol,
     get_hand_history_dirs, set_hand_history_dirs,
     get_last_seen_version, set_last_seen_version,
+    get_live_auto_refresh_enabled,
+    get_last_auto_backup_date, set_last_auto_backup_date,
 )
 
 DB_PATH = profile_data_dir() / "sf_poker.db"
@@ -227,8 +230,41 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         QShortcut(QKeySequence("Ctrl+R"), self, activated=self._on_refresh_clicked)
 
+        self._live_watcher = LiveFolderWatcher(self)
+        self._live_watcher.changed.connect(self._on_live_files_changed)
+        self._apply_live_watch_setting()
+
         self._update_folder_warning()
         self._on_period_changed()
+
+    def _apply_live_watch_setting(self):
+        """(Re)syncs the live folder watcher with the current setting and
+        configured folders — called at startup, after Settings closes
+        (the auto-refresh checkbox takes effect immediately, no restart),
+        and after Manage Folders changes which directories are watched."""
+        if get_live_auto_refresh_enabled():
+            self._live_watcher.watch(get_hand_history_dirs())
+        else:
+            self._live_watcher.watch([])
+
+    def _on_live_files_changed(self):
+        """Debounced callback from the live folder watcher — same import
+        pipeline as the Refresh button, just triggered automatically by a
+        filesystem change instead of a click. Runs synchronously on the
+        main thread, same as the manual Refresh path (see
+        database/repository.py's PokerDatabase docstring on why writes
+        only ever happen there — introducing a second, concurrent writer
+        from a background thread would break that invariant). Measured
+        overhead for a small live-play batch is ~150ms regardless of
+        whether it's 1 or 10 hands (dominated by fixed multiprocessing
+        pool startup cost), so a brief main-thread pause here is an
+        acceptable trade for not risking a corrupted database."""
+        new_count = _import_new_hands(self, self.db, self.hero, dialog_threshold=15)
+        self._apply_live_watch_setting()  # picks up any new files/subfolders that appeared
+        if new_count:
+            self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
+            self._update_folder_warning()
+            self._apply_filters()
 
     def _update_folder_warning(self):
         missing = missing_configured_folders(get_hand_history_dirs())
@@ -307,6 +343,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
         self._update_folder_warning()
         self._apply_filters()
+        self._apply_live_watch_setting()
 
     def _on_manage_folders_clicked(self):
         dlg = HandHistoryDirsDialog(get_hand_history_dirs(), first_run=False, parent=self)
@@ -320,6 +357,7 @@ class AppWindow(QMainWindow, AsyncRunner):
 
     def _on_settings_clicked(self):
         SettingsDialog(parent=self).exec()
+        self._apply_live_watch_setting()
 
     def _on_getting_started_clicked(self):
         GettingStartedDialog(parent=self).exec()
@@ -536,11 +574,20 @@ class AppWindow(QMainWindow, AsyncRunner):
             QMessageBox.information(self, "Check for Updates", "You're up to date.")
 
 
-def _import_new_hands(app_or_window, db, hero) -> int:
+def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int:
     """Checks the watched folders for new/changed files and imports
-    whatever new hands they contain — shared by the startup check (main())
-    and the Refresh button (AppWindow._on_refresh_clicked()), so both stay
-    in sync rather than drifting into two slightly different pipelines."""
+    whatever new hands they contain — shared by the startup check (main()),
+    the Refresh button (AppWindow._on_refresh_clicked()), and the live
+    folder watcher (AppWindow._on_live_files_changed()), so all three stay
+    in sync rather than drifting into slightly different pipelines.
+
+    `dialog_threshold` skips the modal progress dialog for a batch smaller
+    than this many hands — measured at ~150ms regardless of batch size for
+    up to ~10 hands (fixed multiprocessing pool startup cost dominates),
+    so popping a dialog for a single new hand during live play would just
+    flash uselessly. The live watcher passes a higher threshold than the
+    default of 1 (which keeps the dialog for every manual Refresh/startup
+    call, matching prior behavior exactly)."""
     dirs = get_hand_history_dirs()
     logger.info("Checking hand history files...")
     hands, errors, files_parsed, files_skipped, fingerprints = parse_directory_incremental(dirs, db)
@@ -550,26 +597,41 @@ def _import_new_hands(app_or_window, db, hero) -> int:
     if not hands:
         return 0
 
+    # A silent, automatic safety net taken right before today's first
+    # write — at most once per day, so this doesn't add overhead to the
+    # live folder watcher's frequent small imports (see
+    # core/backup.py's create_auto_backup_if_due).
+    try:
+        new_date = create_auto_backup_if_due(
+            db.conn, db.db_path.parent, date.today().isoformat(), get_last_auto_backup_date())
+        if new_date:
+            set_last_auto_backup_date(new_date)
+    except Exception:
+        logger.exception("Automatic pre-import backup failed — continuing with the import anyway")
+
     normalize_hero_aliases(hands, hero)
     convert_hands_to_usd(hands)
 
-    progress = QProgressDialog(
-        f"Building stats database — {len(hands):,} new hand(s)...",
-        None, 0, len(hands), app_or_window if isinstance(app_or_window, QWidget) else None)
-    progress.setWindowTitle("PokerForge")
-    progress.setMinimumDuration(0)
-    progress.setWindowModality(Qt.WindowModality.WindowModal)
-    progress.setValue(0)
-
-    def on_progress(done, total):
-        progress.setValue(done)
-        QApplication.processEvents()
-
     t0 = time.time()
-    db.import_hands(hands, ev_iterations=500, on_progress=on_progress)
+    if len(hands) < dialog_threshold:
+        db.import_hands(hands, ev_iterations=500)
+    else:
+        progress = QProgressDialog(
+            f"Building stats database — {len(hands):,} new hand(s)...",
+            None, 0, len(hands), app_or_window if isinstance(app_or_window, QWidget) else None)
+        progress.setWindowTitle("PokerForge")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setValue(0)
+
+        def on_progress(done, total):
+            progress.setValue(done)
+            QApplication.processEvents()
+
+        db.import_hands(hands, ev_iterations=500, on_progress=on_progress)
+        progress.setValue(len(hands))
     db.mark_files_imported(fingerprints)
     logger.info("Imported %d new hand(s) in %.1fs", len(hands), time.time() - t0)
-    progress.setValue(len(hands))
     return len(hands)
 
 
@@ -616,7 +678,24 @@ def main():
         set_hand_history_dirs(dirs)
 
     logger.info("Checking hand history files...")
-    hands, errors, files_parsed, files_skipped, fingerprints = parse_directory_incremental(dirs, db)
+    scan_progress = QProgressDialog("Scanning hand-history files...", None, 0, 0)
+    scan_progress.setWindowTitle("PokerForge")
+    scan_progress.setWindowModality(Qt.WindowModality.WindowModal)
+    # Only appears if the scan actually takes a moment (a first run against
+    # a folder with thousands of existing files) — a normal relaunch,
+    # where almost everything is already-imported and quickly skipped,
+    # never shows this at all.
+    scan_progress.setMinimumDuration(500)
+
+    def on_startup_scan_progress(done, total):
+        if scan_progress.maximum() != total:
+            scan_progress.setMaximum(total)
+        scan_progress.setValue(done)
+        app.processEvents()
+
+    hands, errors, files_parsed, files_skipped, fingerprints = parse_directory_incremental(
+        dirs, db, on_progress=on_startup_scan_progress)
+    scan_progress.close()
     logger.info("Parsed %d new/changed file(s), skipped %d already-imported file(s) "
                 "— %d new hand(s) found (%d errors)", files_parsed, files_skipped, len(hands), len(errors))
 

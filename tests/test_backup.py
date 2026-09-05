@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from core.backup import create_backup, restore_backup
+from core.backup import create_backup, restore_backup, create_auto_backup_if_due
 
 
 def _live_db(tmp_path):
@@ -93,3 +93,78 @@ def test_restore_ignores_extra_unrelated_files_in_the_zip(tmp_path):
     restore_backup(backup_zip, restore_dir)
     assert (restore_dir / "sf_poker.db").exists()
     assert not (restore_dir / "some_future_file.txt").exists()
+
+
+def test_auto_backup_is_taken_when_none_was_taken_today(tmp_path):
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    conn = _live_db(profile_dir)
+
+    result = create_auto_backup_if_due(conn, profile_dir, "2026-06-01", None)
+    conn.close()
+
+    assert result == "2026-06-01"
+    auto_dir = profile_dir / "auto_backups"
+    assert (auto_dir / "auto_backup_2026-06-01.zip").exists()
+
+
+def test_auto_backup_is_skipped_if_already_taken_today(tmp_path):
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    conn = _live_db(profile_dir)
+
+    result = create_auto_backup_if_due(conn, profile_dir, "2026-06-01", "2026-06-01")
+    conn.close()
+
+    assert result is None
+    assert not (profile_dir / "auto_backups").exists()
+
+
+def test_auto_backup_runs_again_on_a_new_day(tmp_path):
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    conn = _live_db(profile_dir)
+
+    result = create_auto_backup_if_due(conn, profile_dir, "2026-06-02", "2026-06-01")
+    conn.close()
+
+    assert result == "2026-06-02"
+    assert (profile_dir / "auto_backups" / "auto_backup_2026-06-02.zip").exists()
+
+
+def test_auto_backup_keeps_only_the_last_three_snapshots(tmp_path):
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    conn = _live_db(profile_dir)
+
+    dates = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"]
+    last_date = None
+    for d in dates:
+        create_auto_backup_if_due(conn, profile_dir, d, last_date)
+        last_date = d
+    conn.close()
+
+    remaining = sorted(p.name for p in (profile_dir / "auto_backups").glob("*.zip"))
+    assert remaining == [
+        "auto_backup_2026-06-03.zip",
+        "auto_backup_2026-06-04.zip",
+        "auto_backup_2026-06-05.zip",
+    ]
+
+
+def test_auto_backup_is_a_real_restorable_snapshot(tmp_path):
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    conn = _live_db(profile_dir)
+
+    create_auto_backup_if_due(conn, profile_dir, "2026-06-01", None)
+    conn.close()
+
+    restore_dir = tmp_path / "restored"
+    restore_dir.mkdir()
+    restore_backup(profile_dir / "auto_backups" / "auto_backup_2026-06-01.zip", restore_dir)
+
+    restored_conn = sqlite3.connect(restore_dir / "sf_poker.db")
+    rows = restored_conn.execute("SELECT hand_id, profit FROM hands").fetchall()
+    restored_conn.close()
+    assert rows == [("h1", 12.5)]

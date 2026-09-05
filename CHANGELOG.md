@@ -31,7 +31,21 @@ Initial commercial-readiness pass. Highlights:
   database (see schema.sql's `idx_hps_played_at`).
 - Continuous integration (GitHub Actions) runs the full test suite on
   every push.
-- 152 automated tests covering the stat engine, both parsers, the SQL
+- Live auto-refresh: a folder watcher imports new hands automatically
+  while the app stays open (Settings > "Automatically check for new
+  hands while the app is open" to turn it off).
+- An automatic, silent database snapshot before each day's first import
+  — a safety net separate from Tools > Backup My Data, kept alongside
+  the last two.
+- Atomic settings.json writes, so a crash mid-save can no longer leave
+  a truncated/corrupt settings file behind.
+- A progress dialog for the initial hand-history file scan on a large
+  first run, instead of a window that looks frozen.
+- Sessions tab gained "Export to PDF..." — a printable summary for
+  tax/accounting-style records, alongside the existing CSV export.
+- Database & Diagnostics now shows the exchange-rate snapshot date used
+  for $ conversion (see core/currency.py's `FX_RATES_AS_OF`).
+- 191 automated tests covering the stat engine, both parsers, the SQL
   query layer, and the surrounding infrastructure.
 
 ### Known limitations

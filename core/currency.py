@@ -11,7 +11,18 @@ original currencies were previously being added together unconverted,
 which this fixes.
 
 Rates are real, sourced mid-market rates (xe.com / wise.com), not
-invented figures: fetched 2026-09-04."""
+invented figures: fetched 2026-09-04. They are a fixed snapshot, not
+fetched live (this app makes no network calls except the manual, opt-in
+Help > Check for Updates — see PRIVACY_POLICY.md), so FX_RATES_AS_OF
+will drift further from "current" the longer this ships unchanged.
+Surfaced in Tools > Database & Diagnostics so that's visible rather than
+a silent assumption. If this is ever updated: a hand's conversion is
+baked in at IMPORT time (see convert_hands_to_usd below), not
+recomputed later, so changing this rate only affects hands imported
+from that point on — it does NOT retroactively re-convert hands already
+in someone's database, which would silently shift their historical $
+totals without them asking for that."""
+FX_RATES_AS_OF = "2026-09-04"
 FX_TO_USD = {
     '£': 1.3524,  # GBP
     '€': 1.1603,  # EUR

@@ -11,6 +11,7 @@ from ui.theme import lbl, GREEN, RED
 from ui.async_worker import AsyncRunner
 from ui.hand_list_dialog import HandListDialog
 from ui.csv_export import export_table_to_csv
+from ui.pdf_export import export_table_to_pdf
 from database.queries import sessions_query, hands_for_session_query
 
 COLUMNS = ["Date", "Stakes", "Hands", "Profit", "BB/100", "EV BB/100", "Hours"]
@@ -31,6 +32,11 @@ class SessionsTab(QWidget, AsyncRunner):
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         export_btn.clicked.connect(lambda: export_table_to_csv(self.table, self, default_filename="sessions.csv"))
         header_row.addWidget(export_btn)
+        export_pdf_btn = QPushButton("Export to PDF...")
+        export_pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_pdf_btn.setToolTip("A printable summary — for your own tax/accounting records")
+        export_pdf_btn.clicked.connect(self._on_export_pdf)
+        header_row.addWidget(export_pdf_btn)
         lay.addLayout(header_row)
 
         self.table = QTableWidget()
@@ -49,15 +55,31 @@ class SessionsTab(QWidget, AsyncRunner):
         self._db = None
         self._hero = None
         self._sessions = []
+        self._d_from = None
+        self._d_to = None
 
     def refresh(self, db, hero, d_from, d_to, currency="£", stake=None):
         self._currency = currency
         self._db = db
         self._hero = hero
+        self._d_from = d_from
+        self._d_to = d_to
         self.run_async(
             lambda: sessions_query(db, hero, d_from, d_to, stake),
             self._render,
         )
+
+    def _on_export_pdf(self):
+        total_hands = sum(s[2] for s in self._sessions)
+        total_profit = sum(s[3] for s in self._sessions)
+        subtitle = (
+            f"{self._hero}  ·  {self._d_from} to {self._d_to}  ·  "
+            f"{len(self._sessions)} session(s)  ·  {total_hands:,} hands  ·  "
+            f"{self._currency}{total_profit:+,.2f}"
+        )
+        export_table_to_pdf(
+            self.table, self, title="PokerForge Session Summary", subtitle=subtitle,
+            default_filename="session_summary.pdf")
 
     def _on_double_click(self, index):
         session_date, stakes_label, hands, profit, bb100, ev_bb100, hours = self._sessions[index.row()]

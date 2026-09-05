@@ -63,7 +63,7 @@ def parse_directory(directory: str | Path):
     return hands, errors, files_seen
 
 
-def parse_directory_incremental(directories: str | Path | list[str | Path], db):
+def parse_directory_incremental(directories: str | Path | list[str | Path], db, on_progress=None):
     """Like parse_directory, but skips any file whose (mtime, size)
     fingerprint already matches a prior import recorded in `db` —
     avoids re-parsing raw hand-history text for files nothing has
@@ -79,7 +79,14 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db):
     own primary key (INSERT OR IGNORE), so the same hand showing up in two
     different sources — expected, since the live folder's history overlaps
     with anything already manually exported before it was wired up — never
-    creates a duplicate row."""
+    creates a duplicate row.
+
+    `on_progress(done, total)`, if given, is called after every file this
+    walks past (skipped or parsed) — the very first run against a large
+    real folder can take a while just reading files off disk, and this is
+    what lets the UI show something other than a frozen window for it.
+    Costs one extra directory walk upfront (to know `total`) purely to
+    count files, so it's skipped entirely when no callback is given."""
     if isinstance(directories, (str, Path)):
         directories = [directories]
     directories = [Path(d) for d in directories]
@@ -91,6 +98,13 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db):
     files_parsed = 0
     files_skipped = 0
     new_fingerprints = []
+
+    total = None
+    done = 0
+    if on_progress:
+        total = sum(1 for d in directories if d.is_dir()
+                    for _ in list(d.rglob('*.txt')) + list(d.rglob('*.xml')))
+        on_progress(0, total)
 
     def _handle(path, file_hands, file_errors, err_key_fn):
         nonlocal duplicates
@@ -115,6 +129,9 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db):
             fp = (stat.st_mtime, stat.st_size)
             if known.get(str(path)) == fp:
                 files_skipped += 1
+                done += 1
+                if on_progress:
+                    on_progress(done, total)
                 continue
             files_parsed += 1
             try:
@@ -124,11 +141,17 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db):
                 new_fingerprints.append((str(path), fp[0], fp[1]))
             except Exception as exc:
                 errors.append((str(path), str(exc)))
+            done += 1
+            if on_progress:
+                on_progress(done, total)
         for path in sorted(directory.rglob('*.xml')):
             stat = path.stat()
             fp = (stat.st_mtime, stat.st_size)
             if known.get(str(path)) == fp:
                 files_skipped += 1
+                done += 1
+                if on_progress:
+                    on_progress(done, total)
                 continue
             files_parsed += 1
             try:
@@ -137,6 +160,9 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db):
                 new_fingerprints.append((str(path), fp[0], fp[1]))
             except Exception as exc:
                 errors.append((str(path), str(exc)))
+            done += 1
+            if on_progress:
+                on_progress(done, total)
 
     if duplicates:
         logger.info("Skipped %d duplicate hands (same hand_id seen in multiple files)", duplicates)
