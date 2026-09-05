@@ -1,4 +1,4 @@
-"""SF Poker — the real application shell: header, period/stakes filter bar,
+"""PokerForge — the real application shell: header, period/stakes filter bar,
 and tabs (Overview, Sessions, Stats, Population), matching the visual
 structure of the original PT4-based dashboard.
 
@@ -137,7 +137,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         active_profile = get_active_display_name()
         # Only clutters the title once multi-profile is actually in use —
         # a single-profile install looks exactly as it always has.
-        title = "SF Poker" if active_profile == "Default" else f"SF Poker — {active_profile}"
+        title = "PokerForge" if active_profile == "Default" else f"PokerForge — {active_profile}"
         self.setWindowTitle(title)
         self.setMinimumSize(1300, 800)
         self.resize(1680, 1000)
@@ -322,7 +322,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         GettingStartedDialog(parent=self).exec()
 
     def _on_backup_clicked(self):
-        default_name = f"SF Poker Backup {date.today().isoformat()}.zip"
+        default_name = f"PokerForge Backup {date.today().isoformat()}.zip"
         path, _ = QFileDialog.getSaveFileName(self, "Backup My Data", default_name, "Zip Files (*.zip)")
         if not path:
             return
@@ -342,7 +342,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             self, "Restore from Backup",
             "This replaces your current hands, stats, and settings for this profile with "
             "whatever's in the backup. This cannot be undone.\n\n"
-            "SF Poker will restart afterward. Continue?",
+            "PokerForge will restart afterward. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -381,7 +381,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             return
         total = self.db.hand_count()
         progress = QProgressDialog(f"Rebuilding stats for {total:,} hands...", None, 0, total, self)
-        progress.setWindowTitle("SF Poker")
+        progress.setWindowTitle("PokerForge")
         progress.setMinimumDuration(0)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setValue(0)
@@ -420,7 +420,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             reply = QMessageBox.question(
                 self, "Load Demo Data",
                 "This creates a new \"Demo\" profile with synthetic hand histories, so "
-                "you can try SF Poker without needing your own data. It won't affect "
+                "you can try PokerForge without needing your own data. It won't affect "
                 "your real profile. Continue?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -434,7 +434,7 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         set_active_profile(demo_id)
         QMessageBox.information(self, "Load Demo Data",
-                                 "SF Poker needs to restart to switch to the Demo profile.")
+                                 "PokerForge needs to restart to switch to the Demo profile.")
         restart_app()
 
     def _populate_demo_profile(self, demo_id: str):
@@ -451,7 +451,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         }, indent=2), encoding="utf-8")
 
         progress = QProgressDialog("Generating demo data...", None, 0, 0, self)
-        progress.setWindowTitle("SF Poker")
+        progress.setWindowTitle("PokerForge")
         progress.setMinimumDuration(0)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
@@ -468,7 +468,7 @@ class AppWindow(QMainWindow, AsyncRunner):
 
     def _on_report_bug_clicked(self):
         import urllib.parse
-        subject = urllib.parse.quote("SF Poker Bug Report")
+        subject = urllib.parse.quote("PokerForge Bug Report")
         body = urllib.parse.quote(
             "Describe the issue:\n\n\n"
             "---\n"
@@ -502,12 +502,12 @@ class AppWindow(QMainWindow, AsyncRunner):
         help_menu.addSeparator()
         help_menu.addAction("Report a Bug...", self._on_report_bug_clicked)
         help_menu.addAction("Check for Updates...", self._on_check_updates_clicked)
-        help_menu.addAction("About SF Poker...", self._on_about_clicked)
+        help_menu.addAction("About PokerForge...", self._on_about_clicked)
 
     def _on_about_clicked(self):
         QMessageBox.about(
-            self, "About SF Poker",
-            f"<h3>SF Poker</h3>"
+            self, "About PokerForge",
+            f"<h3>PokerForge</h3>"
             f"<p>Version {APP_VERSION}</p>"
             f"<p>A personal poker-stats tracker and hand-history analyzer.</p>"
         )
@@ -553,7 +553,7 @@ def _import_new_hands(app_or_window, db, hero) -> int:
     progress = QProgressDialog(
         f"Building stats database — {len(hands):,} new hand(s)...",
         None, 0, len(hands), app_or_window if isinstance(app_or_window, QWidget) else None)
-    progress.setWindowTitle("SF Poker")
+    progress.setWindowTitle("PokerForge")
     progress.setMinimumDuration(0)
     progress.setWindowModality(Qt.WindowModality.WindowModal)
     progress.setValue(0)
@@ -581,7 +581,7 @@ def main():
         # under python.exe/pythonw.exe's own taskbar identity and shows its
         # icon instead of ours, no matter what QIcon is set below.
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SFPoker.App")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PokerForge.App")
 
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLE)
@@ -595,7 +595,7 @@ def main():
         # twice) would otherwise open a second process against the same
         # SQLite database — refuse cleanly instead of risking a confusing
         # "database is locked" error later.
-        QMessageBox.information(None, "SF Poker", "SF Poker is already running.")
+        QMessageBox.information(None, "PokerForge", "PokerForge is already running.")
         return
 
     db = PokerDatabase(DB_PATH)
@@ -649,7 +649,7 @@ def main():
         progress = QProgressDialog(
             f"Building stats database — {len(hands):,} new hand(s) (one-time per batch; instant next launch)...",
             None, 0, len(hands))
-        progress.setWindowTitle("SF Poker — Setting up")
+        progress.setWindowTitle("PokerForge — Setting up")
         progress.setMinimumDuration(0)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setValue(0)

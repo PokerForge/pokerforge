@@ -44,7 +44,7 @@ def restore_backup(zip_path: Path, profile_dir: Path):
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
         if _DB_NAME not in names:
-            raise ValueError("This doesn't look like an SF Poker backup — no sf_poker.db inside.")
+            raise ValueError("This doesn't look like a PokerForge backup — no sf_poker.db inside.")
         zf.extract(_DB_NAME, profile_dir)
         if _SETTINGS_NAME in names:
             zf.extract(_SETTINGS_NAME, profile_dir)

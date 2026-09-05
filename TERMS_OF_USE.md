@@ -1,4 +1,4 @@
-# SF Poker — Terms of Use
+# PokerForge — Terms of Use
 
 > **DRAFT — not legal advice.** This is a starting template, not a finished
 > legal document. Have a lawyer review it before publishing or relying on
@@ -8,7 +8,7 @@
 
 _Last updated: [DATE]_
 
-By downloading, installing, or using SF Poker ("the App"), you agree to
+By downloading, installing, or using PokerForge ("the App"), you agree to
 these terms.
 
 ## 1. License
@@ -24,7 +24,7 @@ App to build a competing product.
 
 ## 2. What the App does
 
-SF Poker imports hand-history files your poker client(s) produce and
+PokerForge imports hand-history files your poker client(s) produce and
 computes statistics from them for your own review, after the fact. It is
 not a real-time assistant: it does not read the state of an active hand
 while you are playing it, and does not automate or suggest in-game
@@ -34,7 +34,7 @@ decisions.
 
 Different poker sites have different, changing policies on third-party
 software, including simple hand-history review tools. **It is your
-responsibility to confirm that using SF Poker complies with the terms of
+responsibility to confirm that using PokerForge complies with the terms of
 service of any site whose hands you import.** [Consider linking to a page
 that tracks known site policies, if you maintain one — do not state a
 blanket claim here that the App is "allowed everywhere," since that isn't
@@ -43,7 +43,7 @@ something you can guarantee.]
 ## 4. No accuracy guarantee
 
 Statistics are computed from the hand-history data your poker client
-provides. SF Poker does its best to compute these correctly, but:
+provides. PokerForge does its best to compute these correctly, but:
 
 - It cannot verify the accuracy of the underlying hand-history files
 - Statistical definitions vary between trackers, and a number that looks

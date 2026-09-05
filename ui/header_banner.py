@@ -1,6 +1,6 @@
 """Decorative header banner — custom-painted (no external artwork): a dark
 poker-felt gradient with a faint scattered suit-glyph watermark and the
-"SF POKER" wordmark painted directly on top."""
+"PokerForge" wordmark painted directly on top."""
 import math
 
 from PyQt6.QtCore import Qt, QRectF
@@ -54,12 +54,12 @@ class HeaderBanner(QFrame):
         fm = painter.fontMetrics()
         baseline_y = int(h * 0.42) + fm.ascent() // 2
 
-        painter.setPen(QColor(GREEN))
-        painter.drawText(left_pad, baseline_y, "SF")
-        sf_width = fm.horizontalAdvance("SF ")
-
         painter.setPen(QColor(TEXT))
-        painter.drawText(left_pad + sf_width, baseline_y, "POKER")
+        painter.drawText(left_pad, baseline_y, "Poker")
+        poker_width = fm.horizontalAdvance("Poker")
+
+        painter.setPen(QColor(GREEN))
+        painter.drawText(left_pad + poker_width, baseline_y, "Forge")
 
         tagline_font = QFont("Segoe UI", int(h * 0.13))
         tagline_font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 120)

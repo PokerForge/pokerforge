@@ -1,4 +1,4 @@
-# SF Poker — Privacy Policy
+# PokerForge — Privacy Policy
 
 > **DRAFT — not legal advice.** This is a starting template based on how the
 > app actually works today, written to be accurate and honest rather than
@@ -10,15 +10,15 @@ _Last updated: [DATE]_
 
 ## The short version
 
-SF Poker runs entirely on your own computer. It does not send your data
+PokerForge runs entirely on your own computer. It does not send your data
 anywhere. There is no server, no account, no cloud sync, and no analytics.
 The only network request the app can ever make is a manual, one-off check
 you trigger yourself (Help > Check for Updates) — see "Third-party
 services" below for exactly what that does and doesn't send.
 
-## What data SF Poker stores
+## What data PokerForge stores
 
-SF Poker reads poker hand-history files that your poker client already
+PokerForge reads poker hand-history files that your poker client already
 saves on your computer (or that you've exported yourself), and builds a
 local database of statistics from them. This includes:
 
@@ -30,7 +30,7 @@ local database of statistics from them. This includes:
 
 All of this is stored in a single local database file on your computer, at
 `%APPDATA%\SFPoker\` on Windows. **Nothing is uploaded, transmitted, or
-shared with SF Poker, its developer, or any third party.**
+shared with PokerForge, its developer, or any third party.**
 
 ## Data about other players
 
@@ -43,7 +43,7 @@ Poker's database contains other people's usernames and derived statistics
 - Is not used for any purpose other than showing you your own opponents'
   tendencies within the app
 
-If you uninstall SF Poker, this data is not automatically deleted (see
+If you uninstall PokerForge, this data is not automatically deleted (see
 "Deleting your data" below), since it lives separately from the installed
 program files.
 
@@ -55,7 +55,7 @@ the app itself does not delete this folder automatically.
 
 ## Third-party services
 
-SF Poker does not integrate with any analytics provider, crash-reporting
+PokerForge does not integrate with any analytics provider, crash-reporting
 tool, or advertising network, and makes no network requests automatically
 or in the background.
 

@@ -11,7 +11,7 @@ import core.single_instance as mod
 @pytest.fixture(autouse=True)
 def _unique_key(monkeypatch):
     # A fresh key per test, so runs never collide with each other or with
-    # a real SF Poker instance that happens to be running on this machine.
+    # a real PokerForge instance that happens to be running on this machine.
     monkeypatch.setattr(mod, "_KEY", f"SFPoker-Test-{uuid.uuid4()}")
     # _held_lock is module-level global state — reset it so one test's
     # leftover reference (possibly to an already-deleted Qt object once

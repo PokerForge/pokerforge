@@ -18,6 +18,12 @@ def app_data_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    # Deliberately still "SFPoker", not "PokerForge" — the app was renamed
+    # after this path was already in use by real installs (with real,
+    # irreplaceable hand-history databases inside it). Renaming this
+    # folder would mean migrating everyone's data, for a change nobody
+    # ever actually sees (it's an internal storage path, not a UI string).
+    # Not worth the risk for a cosmetic mismatch.
     d = base / "SFPoker"
     d.mkdir(parents=True, exist_ok=True)
     return d

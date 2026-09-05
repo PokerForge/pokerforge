@@ -89,7 +89,7 @@ class GettingStartedDialog(QDialog):
         lay.setSpacing(12)
 
         lay.addWidget(lbl(
-            "SF Poker tracks every hand your poker client saves and turns it "
+            "PokerForge tracks every hand your poker client saves and turns it "
             "into stats across four tabs: Overview (your results over time), "
             "Sessions (a PT4-style hand-by-hand grid), Stats (your own game "
             "broken down by position, with auto-detected leaks), and "

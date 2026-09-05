@@ -29,7 +29,7 @@ class SettingsDialog(QDialog):
         lay.setSpacing(12)
 
         lay.addWidget(lbl(
-            "Changing either of these restarts SF Poker — hero identity and "
+            "Changing either of these restarts PokerForge — hero identity and "
             "currency are used throughout every query in the app.", dim=True))
 
         hero_row = QHBoxLayout()
@@ -74,5 +74,5 @@ class SettingsDialog(QDialog):
 
         QMessageBox.information(
             self, "Settings",
-            "SF Poker needs to restart to apply this change.")
+            "PokerForge needs to restart to apply this change.")
         restart_app()

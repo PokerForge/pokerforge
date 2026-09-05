@@ -11,7 +11,7 @@ forward an "activate my window" request to the first instance, which
 would need a small QLocalServer/QLocalSocket IPC layer on top of this."""
 from PyQt6.QtCore import QSharedMemory
 
-_KEY = "SFPoker-SingleInstance-8f6c6c8b-4c2e-4b9b-9b1e-6f4a9e7b1c1a"
+_KEY = "PokerForge-SingleInstance-8f6c6c8b-4c2e-4b9b-9b1e-6f4a9e7b1c1a"
 
 # Tracked at module level (not just returned to the caller) so
 # ui/profile_dialog.py's restart_app() can release it before spawning the

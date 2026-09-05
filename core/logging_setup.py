@@ -49,8 +49,8 @@ def install_crash_handler():
             from PyQt6.QtWidgets import QApplication, QMessageBox
             if QApplication.instance() is not None:
                 QMessageBox.critical(
-                    None, "SF Poker",
-                    "SF Poker ran into an unexpected problem and needs to close.\n\n"
+                    None, "PokerForge",
+                    "PokerForge ran into an unexpected problem and needs to close.\n\n"
                     f"Details were saved to:\n{LOG_PATH}\n\n"
                     "If this keeps happening, please include that file when asking for help."
                 )

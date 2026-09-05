@@ -1,5 +1,5 @@
 """Generates synthetic hand histories for evaluation/demo purposes — lets
-SF Poker be tried, screenshotted, or demoed without needing anyone's real
+PokerForge be tried, screenshotted, or demoed without needing anyone's real
 poker data. Hands are built as Hand objects directly (not run through a
 hand-history-file parser, since there's no real file to parse), then
 imported through the same PokerDatabase.import_hands() pipeline real

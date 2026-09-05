@@ -39,7 +39,7 @@ class HeroSetupDialog(QDialog):
             warning = lbl(
                 f"⚠ \"{detected_hero}\" only appears in {hero_share:.0%} of the hands found — "
                 "this doesn't look like it's all your own history. Double-check the username "
-                "below, and that you pointed SF Poker at the right folder.",
+                "below, and that you pointed PokerForge at the right folder.",
                 size=12, color="#f85149")
             warning.setWordWrap(True)
             lay.addWidget(warning)

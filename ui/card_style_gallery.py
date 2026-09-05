@@ -1,7 +1,7 @@
 """Saved card-rendering style options, kept for future reuse — NOT imported
 by the active hand replayer (see ui/hand_replayer.py, which currently uses
 its own "gem badge" style). The user asked to keep "Big single glyph"
-specifically for when SF Poker's platform gets built out for commercial use,
+specifically for when PokerForge's platform gets built out for commercial use,
 so it lives here as a ready-to-reuse function rather than only existing in
 chat history.
 

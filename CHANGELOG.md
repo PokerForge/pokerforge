@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SF Poker are documented here. Version numbers
+All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 

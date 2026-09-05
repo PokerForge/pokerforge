@@ -16,7 +16,7 @@ class HandHistoryDirsDialog(QDialog):
     def __init__(self, current_dirs: list[str], first_run: bool = False, parent=None):
         super().__init__(parent)
         self.setStyleSheet(STYLE)
-        self.setWindowTitle("Welcome to SF Poker" if first_run else "Hand History Folders")
+        self.setWindowTitle("Welcome to PokerForge" if first_run else "Hand History Folders")
         self.resize(560, 360)
         self.setModal(True)
 
@@ -32,10 +32,10 @@ class HandHistoryDirsDialog(QDialog):
         initial_dirs = current_dirs + [d for d in detected if d not in current_dirs]
 
         if first_run:
-            lay.addWidget(lbl("Welcome to SF Poker", size=16, bold=True))
+            lay.addWidget(lbl("Welcome to PokerForge", size=16, bold=True))
             lay.addWidget(lbl(
                 "Add the folder(s) where your poker client saves hand histories "
-                "(or where you export them to) — SF Poker scans these for new "
+                "(or where you export them to) — PokerForge scans these for new "
                 "hands every time it starts.", dim=True))
             if detected:
                 lay.addWidget(lbl(
@@ -43,7 +43,7 @@ class HandHistoryDirsDialog(QDialog):
                     "don't want, or add more below.", size=12, color="#3fb950"))
         else:
             lay.addWidget(lbl(
-                "Folders SF Poker scans for hand histories. Add or remove as needed — "
+                "Folders PokerForge scans for hand histories. Add or remove as needed — "
                 "changes take effect the next time hands are checked.", dim=True))
 
         self.list = QListWidget()

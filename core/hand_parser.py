@@ -2,7 +2,7 @@
 
 The parser below is deliberately isolated from the UI. The first adapter supports
  the iPoker network hand-history format. New poker sites should be added as
- adapters without changing the rest of SF Poker.
+ adapters without changing the rest of PokerForge.
 """
 import re
 from datetime import datetime

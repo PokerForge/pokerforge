@@ -73,7 +73,7 @@ class ProfileDialog(QDialog):
         set_active_profile(profile_id)
         choice = QMessageBox.question(
             self, "Restart Required",
-            "SF Poker needs to restart to switch profiles. Restart now?",
+            "PokerForge needs to restart to switch profiles. Restart now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         self.accept()

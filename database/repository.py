@@ -63,7 +63,7 @@ def _build_hand_data(hand: Hand, ev_iterations: int):
 
 
 class PokerDatabase:
-    """SQLite repository backing SF Poker's stats — hand_player_stats holds
+    """SQLite repository backing PokerForge's stats — hand_player_stats holds
     every stat flag precomputed once at import time, so every UI query is a
     fast indexed aggregate query rather than a Python re-walk of raw hand
     actions (see database/hand_stats_builder.py for how rows are built)."""

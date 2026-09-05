@@ -1,4 +1,4 @@
-# SF Poker
+# PokerForge
 
 A personal poker hand-history tracker and stats analyzer (PyQt6 desktop
 app), in the same spirit as PokerTracker/Hold'em Manager: import your own
@@ -68,8 +68,8 @@ see `core/position.py`'s docstring), and both hand-history parsers.
 ## Building a standalone Windows build
 
 ```
-build.bat            # PyInstaller -> dist\SF Poker\ (no Python needed to run it)
-build_installer.bat  # also wraps that into installer_output\SF-Poker-Setup-*.exe (Inno Setup)
+build.bat            # PyInstaller -> dist\PokerForge\ (no Python needed to run it)
+build_installer.bat  # also wraps that into installer_output\PokerForge-Setup-*.exe (Inno Setup)
 ```
 
 The installer installs per-user (no admin/UAC prompt needed) and never

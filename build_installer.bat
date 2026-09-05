@@ -6,13 +6,13 @@ rem (https://jrsoftware.org/isinfo.php).
 cd /d "%~dp0"
 
 echo Building app with PyInstaller...
-python -m PyInstaller "SF Poker.spec" --noconfirm
+python -m PyInstaller "PokerForge.spec" --noconfirm
 if errorlevel 1 goto :error
 
 echo Building installer with Inno Setup...
 set ISCC="%LocalAppData%\Programs\Inno Setup 6\ISCC.exe"
 if not exist %ISCC% set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-%ISCC% sf_poker_installer.iss
+%ISCC% pokerforge_installer.iss
 if errorlevel 1 goto :error
 
 echo.
