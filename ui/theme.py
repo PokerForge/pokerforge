@@ -3,6 +3,7 @@ color palette and layout language rather than inventing a new one."""
 import math
 
 import pyqtgraph as pg
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel
 
 # Applies to every plot in the app (module-level pyqtgraph config) — without
@@ -81,6 +82,12 @@ def hand_axis_ticks(total):
 
 def lbl(text, size=13, color=TEXT, bold=False, dim=False):
     l = QLabel(text)
+    # QLabel's default AutoText mode auto-detects and renders HTML-like
+    # content as rich text — and a lot of what this app displays (player
+    # names, table names) comes straight out of a hand-history file, which
+    # could in principle be one someone else handed you. Plain text always,
+    # so a crafted name can't render as fake bold/formatted UI.
+    l.setTextFormat(Qt.TextFormat.PlainText)
     c = DIM if dim else color
     w = "700" if bold else "400"
     l.setStyleSheet(f"color:{c};font-size:{size}px;font-weight:{w};background:transparent;border:none;")

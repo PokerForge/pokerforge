@@ -7,12 +7,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.paths import app_data_dir
+from config.paths import profile_data_dir
 from database.repository import PokerDatabase
 from core.position import assign_positions
 from models.hand import Hand, Player
 
-DB_PATH = app_data_dir() / "sf_poker.db"
+DB_PATH = profile_data_dir() / "sf_poker.db"
 
 
 def main():

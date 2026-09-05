@@ -1,7 +1,7 @@
-from config.paths import app_data_dir
+from config.paths import profile_data_dir
 from database.repository import PokerDatabase
 
-DB_PATH = app_data_dir() / "sf_poker.db"
+DB_PATH = profile_data_dir() / "sf_poker.db"
 
 if __name__ == "__main__":
     db = PokerDatabase(DB_PATH)

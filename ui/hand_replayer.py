@@ -9,6 +9,7 @@ separately — that's pulled from Hand.raw_text with a small regex rather than
 re-deriving it with a hand evaluator, since the site's own text is already
 authoritative).
 """
+import html
 import math
 import re
 
@@ -303,12 +304,17 @@ class SeatWidget(QWidget):
         top.setSpacing(4)
         name_color = ACCENT2 if is_hero else TEXT
         name_lbl = QLabel()
+        # Plain text, not Qt's default AutoText — `name` comes straight out
+        # of a hand-history file, and a crafted name shouldn't be able to
+        # render as fake bold/formatted UI (see ui/theme.py's lbl() for the
+        # same fix on every other name label in the app).
+        name_lbl.setTextFormat(Qt.TextFormat.PlainText)
         name_lbl.setStyleSheet(f"background:transparent;border:none;font-size:12px;"
                                 f"font-weight:700;color:{name_color};")
         name_lbl.setFixedWidth(104)
         metrics = QFontMetrics(name_lbl.font())
         name_lbl.setText(metrics.elidedText(name, Qt.TextElideMode.ElideRight, 104))
-        name_lbl.setToolTip(name)
+        name_lbl.setToolTip(html.escape(name))
         top.addWidget(name_lbl)
         if position:
             pc = _POS_COLOR.get(position, DIM)

@@ -19,6 +19,7 @@ from ui.async_worker import AsyncRunner
 from ui.main_window import _make_stat_card, _ClickableFrame
 from ui.player_classify import generate_hero_leaks
 from ui.hand_list_dialog import HandListDialog, HandListPanel
+from ui.csv_export import export_table_to_csv
 from database.queries import (
     villain_stats_query, position_breakdown_query, pct_trend_query,
     hands_for_stat_query, hands_for_leak_query, hands_for_position_query, DRILLDOWN_STAT_IDS,
@@ -483,6 +484,9 @@ class StatsTab(QWidget, AsyncRunner):
         header_row.addWidget(lbl("BY POSITION  ·  double-click a position for all its hands, or a stat for example hands",
                                   size=11, dim=True))
         header_row.addStretch()
+        export_btn = QPushButton("Export to CSV...")
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        header_row.addWidget(export_btn)
         customise_btn = QPushButton("Customise")
         customise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         customise_btn.clicked.connect(self._on_customise_clicked)
@@ -504,6 +508,7 @@ class StatsTab(QWidget, AsyncRunner):
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setAlternatingRowColors(True)
         table.cellDoubleClicked.connect(self._on_position_cell_double_clicked)
+        export_btn.clicked.connect(lambda: export_table_to_csv(table, self, default_filename="by_position.csv"))
         table.setToolTip("Double-click a cell to see the hands behind it")
 
         fm = _table_font_metrics()

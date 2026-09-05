@@ -54,3 +54,30 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+begin
+  // Program files are already gone by usPostUninstall — this asks
+  // separately about the *data* folder (hand histories, database,
+  // settings), which deliberately survives a plain uninstall by default
+  // (see PRIVACY_POLICY.md's "Deleting your data" section). Opt-in only,
+  // and defaults to No in the dialog itself, since deleting someone's
+  // poker database by surprise on a routine reinstall/upgrade would be a
+  // much worse outcome than leaving a small folder behind.
+  if CurUninstallStep = usPostUninstall then
+  begin
+    DataDir := ExpandConstant('{userappdata}\SFPoker');
+    if DirExists(DataDir) then
+    begin
+      if MsgBox('Also delete your SF Poker data (hand histories, database, and settings)?' + #13#10 + #13#10 +
+                'Choose No to keep it — for example, if you plan to reinstall later.',
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      begin
+        DelTree(DataDir, True, True, True);
+      end;
+    end;
+  end;
+end;

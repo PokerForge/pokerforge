@@ -11,8 +11,10 @@ _Last updated: [DATE]_
 ## The short version
 
 SF Poker runs entirely on your own computer. It does not send your data
-anywhere. There is no server, no account, no cloud sync, and no analytics —
-the app has no network code at all.
+anywhere. There is no server, no account, no cloud sync, and no analytics.
+The only network request the app can ever make is a manual, one-off check
+you trigger yourself (Help > Check for Updates) — see "Third-party
+services" below for exactly what that does and doesn't send.
 
 ## What data SF Poker stores
 
@@ -53,11 +55,20 @@ the app itself does not delete this folder automatically.
 
 ## Third-party services
 
-SF Poker does not integrate with any third-party service, analytics
-provider, crash-reporting tool, or advertising network. [Update this
-section if that changes in a future version — e.g. if you add license-key
-validation, crash reporting, or an update checker, each of those would
-need to be disclosed here.]
+SF Poker does not integrate with any analytics provider, crash-reporting
+tool, or advertising network, and makes no network requests automatically
+or in the background.
+
+The one exception: choosing **Help > Check for Updates** fetches a small
+version-number file from [HOSTING LOCATION — fill in once release hosting
+is decided] to tell you whether a newer version exists. This request
+contains no hand-history data, no player names, no hero identity, and no
+other information about you or your poker activity — it is a plain HTTP
+request for a static file, the same as visiting a webpage. It only ever
+happens when you click that menu item; nothing runs on a timer or checks
+automatically on startup. [Update this section again if that changes in a
+future version, or if you add license-key validation or crash reporting —
+each of those would need its own disclosure here.]
 
 ## Changes to this policy
 

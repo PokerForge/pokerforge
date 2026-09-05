@@ -1,11 +1,13 @@
 """Population tab: sortable villain pool table (search, player-type filter,
 min-hand filter) + full stat-card profile panel — matches the layout of
 poker_dashboard_legacy.py's PopulationTab."""
+import html
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLineEdit, QComboBox,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
 )
 
 from ui.main_window import VillainDetail
@@ -14,6 +16,7 @@ from ui.population_summary import PopulationRow
 from ui.player_classify import classify_player
 from ui.theme import ACCENT2, BG3, GREEN, RED, lbl
 from ui.async_worker import AsyncRunner
+from ui.csv_export import export_table_to_csv
 from database.queries import population_summary_query
 
 MIN_HAND_OPTIONS = [("Min 1 hand", 1), ("Min 10 hands", 10), ("Min 50 hands", 50),
@@ -79,7 +82,14 @@ class PopulationTab(QWidget, AsyncRunner):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(20, 20, 8, 20)
         ll.setSpacing(10)
-        ll.addWidget(lbl("VILLAIN POOL", size=11, dim=True))
+        pool_header = QHBoxLayout()
+        pool_header.addWidget(lbl("VILLAIN POOL", size=11, dim=True))
+        pool_header.addStretch()
+        export_btn = QPushButton("Export to CSV...")
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.clicked.connect(lambda: export_table_to_csv(self.table, self, default_filename="villain_pool.csv"))
+        pool_header.addWidget(export_btn)
+        ll.addLayout(pool_header)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("\U0001f50d  Search player name...")
@@ -216,7 +226,7 @@ class PopulationTab(QWidget, AsyncRunner):
                     item = QTableWidgetItem(val)
                     if c == 0:
                         item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                        item.setToolTip(r.name)
+                        item.setToolTip(html.escape(r.name))
                         # Carries the pooled member-name list for the click
                         # handler — None for a normal, single-villain row.
                         item.setData(Qt.ItemDataRole.UserRole, combined_names if is_combined else None)

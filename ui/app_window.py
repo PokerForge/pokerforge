@@ -31,9 +31,10 @@ from PyQt6.QtWidgets import (
 )
 
 from core.importer import parse_directory_incremental
-from core.logging_setup import configure_logging
+from core.logging_setup import configure_logging, install_crash_handler
 from config.version import APP_VERSION
-from config.paths import app_data_dir, resource_dir
+from core.update_checker import check_for_update
+from config.paths import profile_data_dir, resource_dir
 from ui.theme import STYLE, BG, BG2, GREEN, BORDER, lbl
 from ui.header_banner import HeaderBanner
 from ui.date_utils import PERIODS, date_range, CUSTOM_RANGE_LABEL
@@ -45,6 +46,9 @@ from ui.async_worker import AsyncRunner
 from ui.hero_detect import detect_hero, normalize_hero_aliases, dominant_currency
 from ui.hand_history_dirs_dialog import HandHistoryDirsDialog
 from ui.hero_setup_dialog import HeroSetupDialog
+from ui.profile_dialog import ProfileDialog
+from ui.getting_started_dialog import GettingStartedDialog
+from config.profiles import get_active_display_name
 from core.currency import convert_hands_to_usd
 from database.repository import PokerDatabase
 from database.queries import available_stakes_query
@@ -53,7 +57,7 @@ from config.settings import (
     get_hand_history_dirs, set_hand_history_dirs,
 )
 
-DB_PATH = app_data_dir() / "sf_poker.db"
+DB_PATH = profile_data_dir() / "sf_poker.db"
 logger = logging.getLogger(__name__)
 
 
@@ -124,7 +128,11 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.currency = currency
         self._custom_range = None
         self._last_period_text = "This Month"
-        self.setWindowTitle("SF Poker")
+        active_profile = get_active_display_name()
+        # Only clutters the title once multi-profile is actually in use —
+        # a single-profile install looks exactly as it always has.
+        title = "SF Poker" if active_profile == "Default" else f"SF Poker — {active_profile}"
+        self.setWindowTitle(title)
         self.setMinimumSize(1300, 800)
         self.resize(1680, 1000)
         self._build_menu_bar()
@@ -279,13 +287,23 @@ class AppWindow(QMainWindow, AsyncRunner):
         set_hand_history_dirs(dlg.selected_dirs())
         self._on_refresh_clicked()
 
+    def _on_switch_profile_clicked(self):
+        ProfileDialog(parent=self).exec()
+
+    def _on_getting_started_clicked(self):
+        GettingStartedDialog(parent=self).exec()
+
     def _build_menu_bar(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("Manage Hand History Folders...", self._on_manage_folders_clicked)
+        file_menu.addAction("Switch Profile...", self._on_switch_profile_clicked)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
         help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("Getting Started...", self._on_getting_started_clicked)
+        help_menu.addSeparator()
+        help_menu.addAction("Check for Updates...", self._on_check_updates_clicked)
         help_menu.addAction("About SF Poker...", self._on_about_clicked)
 
     def _on_about_clicked(self):
@@ -295,6 +313,26 @@ class AppWindow(QMainWindow, AsyncRunner):
             f"<p>Version {APP_VERSION}</p>"
             f"<p>A personal poker-stats tracker and hand-history analyzer.</p>"
         )
+
+    def _on_check_updates_clicked(self):
+        # Only ever runs when the user explicitly asks — see
+        # core/update_checker.py's docstring for why that matters here.
+        self.run_async(check_for_update, self._on_update_check_result, key="update_check")
+
+    def _on_update_check_result(self, result):
+        if not result.checked:
+            QMessageBox.information(self, "Check for Updates",
+                                     result.error or "Couldn't check for updates right now.")
+            return
+        if result.update_available:
+            msg = f"A new version ({result.latest_version}) is available — you have {APP_VERSION}."
+            if result.notes:
+                msg += f"\n\n{result.notes}"
+            if result.download_url:
+                msg += f"\n\n{result.download_url}"
+            QMessageBox.information(self, "Update Available", msg)
+        else:
+            QMessageBox.information(self, "Check for Updates", "You're up to date.")
 
 
 def _import_new_hands(app_or_window, db, hero) -> int:
@@ -339,6 +377,7 @@ def main():
     # real terminal, so these prints otherwise never appear if the process
     # is killed/backgrounded before it happens to flush on its own.
     configure_logging()
+    install_crash_handler()
     if sys.platform == "win32":
         # Without a distinct App User Model ID, Windows groups this process
         # under python.exe/pythonw.exe's own taskbar identity and shows its
@@ -429,11 +468,9 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        # Under pythonw there's no console to show this on — without a
-        # log entry, a startup crash would otherwise vanish with no trace
-        # at all beyond the process silently disappearing.
-        logger.exception("SF Poker crashed")
-        raise
+    # A startup exception here (or any later exception from inside a Qt
+    # slot while the app is running) is caught by the sys.excepthook
+    # install_crash_handler() set up inside main() — logged with a full
+    # traceback and shown to the user as a short message, not raw
+    # PyInstaller crash-dialog text.
+    main()

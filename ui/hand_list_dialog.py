@@ -8,11 +8,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QWidget, QLabel, QHeaderView,
+    QWidget, QLabel, QHeaderView, QPushButton,
 )
 
 from ui.theme import STYLE, GREEN, RED, TEXT, DIM, BORDER, lbl
 from ui.hand_replayer import HandReplayDialog
+from ui.csv_export import export_table_to_csv
 from database.hand_loader import load_hands_bulk, load_hand
 from core.position import assign_positions
 from core.hand_display import (
@@ -94,8 +95,16 @@ class HandListPanel(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        lay.addWidget(lbl(f"{stat_label.upper()}  ·  {len(self.rows)} hands  ·  double-click to replay",
-                          size=11, dim=True))
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(lbl(f"{stat_label.upper()}  ·  {len(self.rows)} hands  ·  double-click to replay",
+                                  size=11, dim=True))
+        header_row.addStretch()
+        export_btn = QPushButton("Export to CSV...")
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.clicked.connect(self._on_export_clicked)
+        header_row.addWidget(export_btn)
+        lay.addLayout(header_row)
 
         self.table = QTableWidget()
         self.table.setColumnCount(len(COLUMNS))
@@ -211,6 +220,9 @@ class HandListPanel(QWidget):
         hand = load_hand(self.db, hand_id)
         if hand is not None:
             HandReplayDialog(hand, self.subject_name, parent=self).exec()
+
+    def _on_export_clicked(self):
+        export_table_to_csv(self.table, self, default_filename="hands.csv")
 
 
 class HandListDialog(QDialog):

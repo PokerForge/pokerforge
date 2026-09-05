@@ -3,9 +3,9 @@ hardcoded in source (this app is meant to be used by more than one person,
 each with their own hero identity/aliases and display preferences)."""
 import json
 
-from config.paths import app_data_dir
+from config.paths import profile_data_dir
 
-SETTINGS_PATH = app_data_dir() / "settings.json"
+SETTINGS_PATH = profile_data_dir() / "settings.json"
 
 _DEFAULTS = {
     "hero_aliases": [],
