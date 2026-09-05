@@ -2,7 +2,7 @@
 villain hand-range heatmap. Getting the suited/offsuit/pair distinction
 and the higher-rank-first ordering wrong here would mislabel every cell
 in the grid, so this is worth pinning down precisely."""
-from core.range_grid import hand_notation, grid_layout, tally_hands, RANKS
+from core.range_grid import hand_notation, grid_layout, tally_hands, group_hand_ids_by_notation, RANKS
 
 
 def test_pair_notation():
@@ -61,3 +61,17 @@ def test_tally_hands_counts_each_notation():
 
 def test_tally_hands_empty_list_returns_empty_dict():
     assert tally_hands([]) == {}
+
+
+def test_group_hand_ids_by_notation_groups_multiple_hands_into_one_cell():
+    entries = [
+        ("h1", ("A♠", "A♦")),
+        ("h2", ("K♦", "A♦")),
+        ("h3", ("A♦", "K♦")),  # same notation as h2, different hand
+    ]
+    grouped = group_hand_ids_by_notation(entries)
+    assert grouped == {"AA": ["h1"], "AKs": ["h2", "h3"]}
+
+
+def test_group_hand_ids_by_notation_empty_list_returns_empty_dict():
+    assert group_hand_ids_by_notation([]) == {}

@@ -49,8 +49,10 @@ Initial commercial-readiness pass. Highlights:
   now be filtered by position, revealing a "Range Grid" button — a 13x13
   heatmap of hole cards actually seen for the filtered hands. Clearly
   labeled as "N of M hands shown," not a claim about someone's true
-  range, since folded hands are never revealed by the site.
-- 208 automated tests covering the stat engine, both parsers, the SQL
+  range, since folded hands are never revealed by the site. Clicking a
+  cell replays every hand behind it, with Previous/Next Hand navigation
+  in the replayer for stepping through more than one.
+- 221 automated tests covering the stat engine, both parsers, the SQL
   query layer, and the surrounding infrastructure.
 
 ### Known limitations

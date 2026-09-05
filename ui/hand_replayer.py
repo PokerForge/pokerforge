@@ -650,15 +650,23 @@ class TableWidget(QWidget):
 
 
 class HandReplayDialog(QDialog):
-    def __init__(self, hand: Hand, hero: str, parent=None):
+    """Replays one hand, or steps through a whole SEQUENCE of hands
+    (Previous/Next Hand, distinct from the existing action-stepping
+    ◀/▶ transport controls) — e.g. every hand behind one range-grid cell
+    (ui/range_grid.py). `hand` is still the primary argument for the
+    single-hand case every existing caller uses; pass `hand_list` (with
+    `hand` as its first element) to enable the extra navigation row."""
+
+    def __init__(self, hand: Hand, hero: str, parent=None,
+                 hand_list: list[Hand] | None = None, start_index: int = 0):
         super().__init__(parent)
-        self.hand = hand
         self.hero = hero
-        self.events = _build_events(hand)
+        self.hand_list = hand_list if hand_list is not None else [hand]
+        self.hand_index = start_index if hand_list is not None else 0
         self.idx = -1
         self.playing = False
+        self.table = None
 
-        self.setWindowTitle(f"Hand #{hand.hand_id}")
         self.setStyleSheet(STYLE)
         self.resize(980, 760)
 
@@ -669,19 +677,28 @@ class HandReplayDialog(QDialog):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(10)
 
-        played = hand.played_at.strftime("%Y-%m-%d %H:%M") if hand.played_at else "—"
-        stake_cur = hand.native_currency or hand.currency
-        sb = hand.native_small_blind if hand.native_small_blind is not None else hand.small_blind
-        bb = hand.native_big_blind if hand.native_big_blind is not None else hand.big_blind
-        header = lbl(
-            f"{hand.table_name or 'Table'}  ·  {stake_cur}{sb:g}/{stake_cur}{bb:g}"
-            f"  ·  {played}  ·  Hand #{hand.hand_id}",
-            size=12, dim=True)
-        header.setWordWrap(True)
-        outer.addWidget(header)
+        self.hand_nav_label = None
+        if len(self.hand_list) > 1:
+            nav_row = QHBoxLayout()
+            nav_row.setSpacing(8)
+            self.hand_nav_prev_btn = QPushButton("◀ Previous Hand")
+            self.hand_nav_prev_btn.clicked.connect(self._go_prev_hand)
+            nav_row.addWidget(self.hand_nav_prev_btn)
+            self.hand_nav_label = lbl("", size=12, bold=True)
+            nav_row.addWidget(self.hand_nav_label)
+            self.hand_nav_next_btn = QPushButton("Next Hand ▶")
+            self.hand_nav_next_btn.clicked.connect(self._go_next_hand)
+            nav_row.addWidget(self.hand_nav_next_btn)
+            nav_row.addStretch()
+            outer.addLayout(nav_row)
 
-        self.table = TableWidget(hand, hero)
-        outer.addWidget(self.table, 1)
+        self.header = lbl("", size=12, dim=True)
+        self.header.setWordWrap(True)
+        outer.addWidget(self.header)
+
+        self._table_slot = QVBoxLayout()
+        self._table_slot.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self._table_slot, 1)
 
         # Bottom row: log on the left, playback + street controls stacked
         # on the right — rather than the log spanning full width with
@@ -746,11 +763,53 @@ class HandReplayDialog(QDialog):
         bottom.addLayout(controls, 1)
         outer.addLayout(bottom)
 
+        self._load_hand(self.hand_list[self.hand_index])
+
+    def _load_hand(self, hand: Hand):
+        """Swaps in a different hand without closing/reopening the dialog
+        — TableWidget is rebuilt from scratch (it's constructed around one
+        specific hand's seats/players, not designed to be repointed at a
+        different hand in place), everything else just resets/re-renders."""
+        self._pause()
+        self.hand = hand
+        self.events = _build_events(hand)
+        self.idx = -1
+
+        self.setWindowTitle(f"Hand #{hand.hand_id}")
+        played = hand.played_at.strftime("%Y-%m-%d %H:%M") if hand.played_at else "—"
+        stake_cur = hand.native_currency or hand.currency
+        sb = hand.native_small_blind if hand.native_small_blind is not None else hand.small_blind
+        bb = hand.native_big_blind if hand.native_big_blind is not None else hand.big_blind
+        self.header.setText(
+            f"{hand.table_name or 'Table'}  ·  {stake_cur}{sb:g}/{stake_cur}{bb:g}"
+            f"  ·  {played}  ·  Hand #{hand.hand_id}")
+
+        if self.table is not None:
+            self._table_slot.removeWidget(self.table)
+            self.table.deleteLater()
+        self.table = TableWidget(hand, self.hero)
+        self._table_slot.addWidget(self.table)
+
+        if self.hand_nav_label is not None:
+            self.hand_nav_label.setText(f"Hand {self.hand_index + 1} of {len(self.hand_list)}")
+            self.hand_nav_prev_btn.setEnabled(self.hand_index > 0)
+            self.hand_nav_next_btn.setEnabled(self.hand_index < len(self.hand_list) - 1)
+
         self._render_state()
         if self.events:
             self.playing = True
             self.timer.start(1200)
             self.btn_playpause.setText("⏸")
+
+    def _go_prev_hand(self):
+        if self.hand_index > 0:
+            self.hand_index -= 1
+            self._load_hand(self.hand_list[self.hand_index])
+
+    def _go_next_hand(self):
+        if self.hand_index < len(self.hand_list) - 1:
+            self.hand_index += 1
+            self._load_hand(self.hand_list[self.hand_index])
 
     def _pause(self):
         self.playing = False

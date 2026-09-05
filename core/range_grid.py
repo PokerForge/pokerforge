@@ -52,3 +52,15 @@ def tally_hands(hole_card_pairs: list[tuple[str, str]]) -> dict[str, int]:
         notation = hand_notation(card1, card2)
         counts[notation] = counts.get(notation, 0) + 1
     return counts
+
+
+def group_hand_ids_by_notation(hand_entries: list[tuple[str, tuple[str, str]]]) -> dict[str, list[str]]:
+    """{notation: [hand_id, ...]} — which specific hands landed in each
+    grid cell, so clicking a cell (ui/range_grid.py's RangeGridWidget)
+    can open exactly those hands in the replayer. `hand_entries` is
+    (hand_id, (card1, card2)) pairs."""
+    grouped: dict[str, list[str]] = {}
+    for hand_id, (card1, card2) in hand_entries:
+        notation = hand_notation(card1, card2)
+        grouped.setdefault(notation, []).append(hand_id)
+    return grouped

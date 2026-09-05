@@ -90,8 +90,8 @@ def test_range_toggle_opens_a_popup_built_from_visible_rows_only(panel):
     # up in the grid, and the SB-only hand (h3: 72o) must NOT appear.
     grid_widget = panel._range_popup.findChild(RangeGridWidget)
     assert grid_widget is not None
-    assert grid_widget.cells["AKs"].toolTip() == "AKs — seen 1x"
-    assert grid_widget.cells["QQ"].toolTip() == "QQ — seen 1x"
+    assert "AKs — seen 1x" in grid_widget.cells["AKs"].toolTip()
+    assert "QQ — seen 1x" in grid_widget.cells["QQ"].toolTip()
     assert grid_widget.cells["72o"].toolTip() == "72o"  # not seen in this filtered view
     panel._close_range_popup()
 
@@ -110,3 +110,58 @@ def test_switching_position_filter_closes_an_open_popup(panel):
     assert panel._range_popup is not None
     panel.position_filter.setCurrentText("SB")
     assert panel._range_popup is None
+
+
+def test_clicking_a_cell_opens_the_replayer_with_that_cells_hands(panel, monkeypatch, three_hands):
+    import ui.hand_list_dialog as mod
+
+    opened = {}
+
+    class _FakeDialog:
+        def __init__(self, hand, subject_name, parent=None, hand_list=None, start_index=0):
+            opened['hand'] = hand
+            opened['subject_name'] = subject_name
+            opened['hand_list'] = hand_list
+            opened['start_index'] = start_index
+
+        def exec(self):
+            opened['exec_called'] = True
+
+    monkeypatch.setattr(mod, "HandReplayDialog", _FakeDialog)
+
+    panel.position_filter.setCurrentText("BTN")
+    panel._on_range_toggle_clicked()
+    panel._on_range_cell_clicked("AKs", ["h1"])
+
+    assert opened['subject_name'] == "Hero"
+    assert opened['hand'] is three_hands["h1"]
+    assert opened['hand_list'] == [three_hands["h1"]]
+    assert opened['exec_called'] is True
+    # Clicking a cell should also tidy away the now-superseded popup.
+    assert panel._range_popup is None
+
+
+def test_clicking_a_cell_with_multiple_hands_passes_the_whole_list(panel, monkeypatch, three_hands):
+    import ui.hand_list_dialog as mod
+
+    opened = {}
+    monkeypatch.setattr(mod, "HandReplayDialog", lambda hand, subj, parent=None, hand_list=None, start_index=0:
+                         opened.update(hand_list=hand_list) or _NullDialog())
+
+    panel._on_range_cell_clicked("AKs", ["h1", "h3"])
+    assert opened['hand_list'] == [three_hands["h1"], three_hands["h3"]]
+
+
+def test_clicking_a_cell_with_no_resolvable_hands_does_nothing(panel, monkeypatch):
+    import ui.hand_list_dialog as mod
+    calls = []
+    monkeypatch.setattr(mod, "HandReplayDialog", lambda *a, **k: calls.append(True))
+    monkeypatch.setattr(mod, "load_hands_bulk", lambda db, ids: {})
+
+    panel._on_range_cell_clicked("AKs", ["does_not_exist"])
+    assert calls == []
+
+
+class _NullDialog:
+    def exec(self):
+        pass

@@ -282,14 +282,24 @@ class HandListPanel(QWidget):
             return
 
         visible = self._visible_rows()
-        hole_card_pairs = [
-            tuple(self._row_hole_cards[r]) for r in visible if len(self._row_hole_cards[r]) == 2
+        hand_entries = [
+            (self.rows[r][0], tuple(self._row_hole_cards[r]))
+            for r in visible if len(self._row_hole_cards[r]) == 2
         ]
-        popup = RangeGridPopup(hole_card_pairs, len(hole_card_pairs), len(visible), parent=self)
+        popup = RangeGridPopup(hand_entries, len(hand_entries), len(visible), parent=self)
+        popup.cell_clicked.connect(self._on_range_cell_clicked)
         pos = self.range_btn.mapToGlobal(QPoint(0, self.range_btn.height()))
         popup.move(pos)
         popup.show()
         self._range_popup = popup
+
+    def _on_range_cell_clicked(self, notation: str, hand_ids: list[str]):
+        hands_by_id = load_hands_bulk(self.db, hand_ids)
+        hands = [hands_by_id[hid] for hid in hand_ids if hid in hands_by_id]
+        if not hands:
+            return
+        self._close_range_popup()
+        HandReplayDialog(hands[0], self.subject_name, parent=self, hand_list=hands, start_index=0).exec()
 
     def _on_double_click(self, index):
         hand_id = self.rows[index.row()][0]
