@@ -1,0 +1,51 @@
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import Optional
+
+@dataclass
+class Player:
+    name: str
+    seat: Optional[int] = None
+    stack: Optional[float] = None
+    hole_cards: list[str] = field(default_factory=list)
+
+@dataclass
+class Action:
+    street: str
+    player: str
+    action: str
+    amount: Optional[float] = None
+
+@dataclass
+class Hand:
+    hand_id: str
+    game_type: str = "Texas Hold'em"
+    currency: str = "£"
+    small_blind: Optional[float] = None
+    big_blind: Optional[float] = None
+    # Preserved pre-conversion by core.currency.convert_hands_to_usd, so the
+    # stakes label can stay in the original currency (matching PT4) even
+    # though small_blind/big_blind/currency above get converted to USD for
+    # BB/100 math (which must divide by a blind in the same currency as the
+    # profit it's dividing).
+    native_currency: Optional[str] = None
+    native_small_blind: Optional[float] = None
+    native_big_blind: Optional[float] = None
+    played_at: Optional[datetime] = None
+    table_name: Optional[str] = None
+    table_size: Optional[int] = None
+    button_seat: Optional[int] = None
+    players: list[Player] = field(default_factory=list)
+    board: list[str] = field(default_factory=list)
+    actions: list[Action] = field(default_factory=list)
+    total_pot: Optional[float] = None
+    rake: Optional[float] = None
+    winnings: dict[str, float] = field(default_factory=dict)
+    invested: dict[str, float] = field(default_factory=dict)
+    raw_text: Optional[str] = None
+    source: Optional[str] = None
+    unmatched_lines: list[str] = field(default_factory=list)
+
+    @property
+    def played_date(self) -> Optional[date]:
+        return self.played_at.date() if self.played_at else None

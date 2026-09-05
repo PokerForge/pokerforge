@@ -1,0 +1,18 @@
+# Local runtime data — the real database/settings live in %APPDATA%\SFPoker\
+# (see config/paths.py); anything under data/ here is a stale pre-migration
+# copy, and config/settings.json is personal (hero name, currency, folders).
+data/
+config/settings.json
+
+# Build artifacts — fully regenerable via build.bat / build_installer.bat.
+build/
+dist/
+installer_output/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Claude Code session-local files, not project source.
+.claude/
