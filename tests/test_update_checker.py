@@ -14,10 +14,82 @@ def _manifest_url(tmp_path, data):
 
 def test_unconfigured_reports_not_checked_without_erroring(monkeypatch):
     monkeypatch.setattr(uc, "UPDATE_MANIFEST_URL", None)
+    monkeypatch.setattr(uc, "GITHUB_REPO", None)
     result = uc.check_for_update()
     assert result.checked is False
     assert result.update_available is False
     assert "set up" in result.error
+
+
+def test_github_repo_takes_priority_over_manifest_url(monkeypatch, tmp_path):
+    """If both are configured, GITHUB_REPO wins — the manifest URL is only
+    a fallback for when releases don't live on GitHub."""
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+    monkeypatch.setattr(uc, "UPDATE_MANIFEST_URL", "file:///should/not/be/used.json")
+    calls = []
+    monkeypatch.setattr(uc, "_check_github_releases",
+                         lambda repo, timeout: calls.append(repo) or uc.UpdateCheckResult(checked=True, update_available=False))
+    uc.check_for_update()
+    assert calls == ["someone/somerepo"]
+
+
+def test_github_release_newer_than_current_reports_update_available(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            import json as _json
+            return _json.dumps({
+                "tag_name": "v9.9.9",
+                "html_url": "https://github.com/someone/somerepo/releases/tag/v9.9.9",
+                "body": "Big release",
+                "assets": [{"name": "PokerForge-Setup-9.9.9.exe",
+                            "browser_download_url": "https://example.com/PokerForge-Setup-9.9.9.exe"}],
+            }).encode('utf-8')
+
+    monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+    result = uc.check_for_update()
+    assert result.checked is True
+    assert result.update_available is True
+    assert result.latest_version == "9.9.9"
+    assert result.download_url == "https://example.com/PokerForge-Setup-9.9.9.exe"
+    assert result.notes == "Big release"
+
+
+def test_github_release_missing_tag_is_not_checked(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            import json as _json
+            return _json.dumps({"body": "no tag_name field"}).encode('utf-8')
+
+    monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+    result = uc.check_for_update()
+    assert result.checked is False
+    assert result.error
+
+
+def test_github_unreachable_is_handled_not_raised(monkeypatch):
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+
+    def _raise(*a, **k):
+        raise OSError("network is down")
+
+    monkeypatch.setattr(uc.urllib.request, "urlopen", _raise)
+    result = uc.check_for_update()
+    assert result.checked is False
+    assert result.error
 
 
 def test_newer_version_available(monkeypatch, tmp_path):

@@ -95,3 +95,23 @@ def test_empty_database_is_healthy(db):
     report = check_database_health(db)
     assert report.ok is True
     assert report.hand_count == 0
+
+
+def test_hand_player_stats_has_a_played_at_only_index(db):
+    """Population-style queries filter by played_at across ALL players (no
+    player_name in the WHERE), so they need an index that doesn't lead with
+    player_name to avoid a full scan regardless of date-range width — see
+    schema.sql's comment above idx_hps_played_at for the measured impact
+    (a 900k-row all-time population query: ~3.6s -> ~0.5s)."""
+    indexes = db.conn.execute("PRAGMA index_list(hand_player_stats)").fetchall()
+    played_at_only_index = None
+    for row in indexes:
+        index_name = row[1]
+        cols = [c[2] for c in db.conn.execute(f"PRAGMA index_info({index_name})").fetchall()]
+        if cols == ["played_at"]:
+            played_at_only_index = index_name
+    assert played_at_only_index is not None, (
+        "hand_player_stats needs an index on played_at alone (not composed "
+        "with player_name) for population-wide date-range queries to seek "
+        "instead of full-scanning"
+    )

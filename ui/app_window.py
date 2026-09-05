@@ -54,6 +54,8 @@ from ui.profile_dialog import ProfileDialog, restart_app
 from ui.settings_dialog import SettingsDialog
 from ui.getting_started_dialog import GettingStartedDialog
 from ui.diagnostics_dialog import DiagnosticsDialog
+from ui.whats_new_dialog import WhatsNewDialog
+from core.changelog import get_changelog_entry
 from config.profiles import get_active_display_name
 from core.currency import convert_hands_to_usd
 from database.repository import PokerDatabase
@@ -61,6 +63,7 @@ from database.queries import available_stakes_query
 from config.settings import (
     get_hero_name, set_hero_name, get_currency_symbol, set_currency_symbol,
     get_hand_history_dirs, set_hand_history_dirs,
+    get_last_seen_version, set_last_seen_version,
 )
 
 DB_PATH = profile_data_dir() / "sf_poker.db"
@@ -676,6 +679,18 @@ def main():
     if icon_path.exists():
         win.setWindowIcon(QIcon(str(icon_path)))
     win.show()
+
+    last_seen_version = get_last_seen_version()
+    if last_seen_version != APP_VERSION:
+        # Skip the popup on a genuinely first-ever launch (nothing "new"
+        # to announce over — that's what the Getting Started guide and
+        # first-run wizard are for) but still record the version, so
+        # upgrading later from this point on shows What's New as expected.
+        changelog_body = get_changelog_entry(APP_VERSION)
+        if last_seen_version is not None and changelog_body:
+            WhatsNewDialog(APP_VERSION, changelog_body, parent=win).exec()
+        set_last_seen_version(APP_VERSION)
+
     sys.exit(app.exec())
 
 

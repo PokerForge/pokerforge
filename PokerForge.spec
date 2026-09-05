@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('database/schema.sql', 'database')],
+    datas=[('assets', 'assets'), ('database/schema.sql', 'database'), ('CHANGELOG.md', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -15,6 +15,8 @@ _DEFAULTS = {
     "trend_stat_ids": None,
     "trend_interval_days": 14,
     "hand_history_dirs": [],
+    "last_seen_version": None,
+    "license_key": None,
 }
 
 
@@ -119,4 +121,29 @@ def get_trend_interval_days() -> int:
 def set_trend_interval_days(days: int):
     settings = load_settings()
     settings["trend_interval_days"] = days
+    save_settings(settings)
+
+
+def get_last_seen_version() -> str | None:
+    """The APP_VERSION this profile last launched with — None for a
+    profile that predates this setting, or a genuinely first-ever launch.
+    Drives the "What's new" popup: it's shown only when this doesn't match
+    the running version (see ui/app_window.py's main())."""
+    return load_settings().get("last_seen_version")
+
+
+def set_last_seen_version(version: str):
+    settings = load_settings()
+    settings["last_seen_version"] = version
+    save_settings(settings)
+
+
+def get_license_key() -> str | None:
+    """See core/licensing.py — unused while LICENSE_ENFORCED is False."""
+    return load_settings().get("license_key")
+
+
+def set_license_key(key: str | None):
+    settings = load_settings()
+    settings["license_key"] = key
     save_settings(settings)

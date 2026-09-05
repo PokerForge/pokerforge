@@ -129,6 +129,14 @@ CREATE INDEX IF NOT EXISTS idx_hand_players_name ON hand_players(player_name);
 CREATE INDEX IF NOT EXISTS idx_actions_hand ON actions(hand_id);
 CREATE INDEX IF NOT EXISTS idx_hps_player_date ON hand_player_stats(player_name, played_at);
 CREATE INDEX IF NOT EXISTS idx_hps_player_stake ON hand_player_stats(player_name, stakes_label);
+-- Population queries filter by played_at across ALL players (no player_name
+-- in the WHERE), so they can't seek through either index above (both lead
+-- with player_name) — without this, SQLite falls back to scanning the
+-- entire idx_hps_player_date index regardless of how narrow the date range
+-- is. Measured on a synthetic 900k-row table: a "this month"-style
+-- population query went from ~193ms to ~17ms, and an all-time one from
+-- ~3.6s to ~0.5s.
+CREATE INDEX IF NOT EXISTS idx_hps_played_at ON hand_player_stats(played_at);
 
 -- Tracks which hand-history files have already been fully parsed and
 -- imported, keyed by a cheap (mtime, size) fingerprint — lets startup
