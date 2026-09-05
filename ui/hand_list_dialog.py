@@ -4,21 +4,24 @@ Action, PF Act, F/T/R Act, Final Hand, Winner, Winning Hand) was validated
 hand-by-hand against a real PT4 CSV export before this dialog was built —
 see core/hand_display.py's docstrings. Double-click a row to open the
 full hand in HandReplayDialog, same as before."""
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QWidget, QLabel, QHeaderView, QPushButton,
+    QWidget, QLabel, QHeaderView, QPushButton, QComboBox,
 )
 
 from ui.theme import STYLE, GREEN, RED, TEXT, DIM, BORDER, lbl
 from ui.hand_replayer import HandReplayDialog
 from ui.csv_export import export_table_to_csv
+from ui.range_grid import RangeGridPopup
 from database.hand_loader import load_hands_bulk, load_hand
 from core.position import assign_positions
 from core.hand_display import (
     facing_and_pf_act, postflop_act, final_hand_text, winner_and_hand_text, to_native, SITE_LABELS,
 )
+
+ALL_POSITIONS_LABEL = "All Positions"
 
 COLUMNS = [
     "Site", "Date", "Stake", "Won", "My C Won", "Final Hand", "Hole Cards",
@@ -91,6 +94,7 @@ class HandListPanel(QWidget):
         self.subject_name = subject_name
         self.currency = currency
         self._embedded = embedded
+        self._range_popup = None
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -100,6 +104,24 @@ class HandListPanel(QWidget):
         header_row.addWidget(lbl(f"{stat_label.upper()}  ·  {len(self.rows)} hands  ·  double-click to replay",
                                   size=11, dim=True))
         header_row.addStretch()
+
+        header_row.addWidget(lbl("Position", dim=True, size=11))
+        self.position_filter = QComboBox()
+        self.position_filter.addItem(ALL_POSITIONS_LABEL)
+        self.position_filter.currentTextChanged.connect(self._on_position_filter_changed)
+        header_row.addWidget(self.position_filter)
+
+        # Only meaningful once filtered to one position — a range grid
+        # mixing every position together isn't really "a range" at all.
+        self.range_btn = QPushButton("▦ Range Grid")
+        self.range_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.range_btn.setToolTip(
+            "Shows hole cards actually seen (not this player's true range — "
+            "folded hands are never revealed) for the hands currently shown")
+        self.range_btn.clicked.connect(self._on_range_toggle_clicked)
+        self.range_btn.hide()
+        header_row.addWidget(self.range_btn)
+
         export_btn = QPushButton("Export to CSV...")
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         export_btn.clicked.connect(self._on_export_clicked)
@@ -136,6 +158,7 @@ class HandListPanel(QWidget):
         lay.addWidget(self.table)
 
         self._populate()
+        self._populate_position_filter()
 
         if self._embedded:
             # Embedded on a page (rather than filling a modal dialog), so
@@ -149,6 +172,13 @@ class HandListPanel(QWidget):
         hand_ids = [r[0] for r in self.rows]
         hands = load_hands_bulk(self.db, hand_ids)
         self.table.setRowCount(len(self.rows))
+        # Parallel to self.rows, indexed by table row — position and hole
+        # cards are already computed below per row for display; caching
+        # them here (rather than recomputing) is what lets the position
+        # filter and range-grid popup work off already-loaded data with
+        # no extra hand lookups.
+        self._row_positions: list[str] = []
+        self._row_hole_cards: list[list[str]] = []
 
         for row_i, (hand_id, played_at, stakes, profit, ev) in enumerate(self.rows):
             self.table.setRowHeight(row_i, 30)
@@ -156,6 +186,8 @@ class HandListPanel(QWidget):
             if hand is None:
                 item = QTableWidgetItem("(hand data unavailable)")
                 self.table.setItem(row_i, 0, item)
+                self._row_positions.append("—")
+                self._row_hole_cards.append([])
                 continue
 
             native = hand.native_currency or self.currency
@@ -181,6 +213,8 @@ class HandListPanel(QWidget):
             turn_cards = [board[3]] if len(board) >= 4 else []
             river_cards = [board[4]] if len(board) >= 5 else []
             hole_cards = player.hole_cards if player else []
+            self._row_positions.append(position)
+            self._row_hole_cards.append(hole_cards)
 
             texts = {
                 0: site, 1: played, 2: stakes or "—",
@@ -214,6 +248,48 @@ class HandListPanel(QWidget):
             for col, cards in ((6, hole_cards), (10, flop_cards), (12, turn_cards), (14, river_cards)):
                 if cards:
                     self.table.setCellWidget(row_i, col, _card_row(cards))
+
+    def _populate_position_filter(self):
+        distinct = sorted({p for p in self._row_positions if p and p != "—"})
+        self.position_filter.blockSignals(True)
+        self.position_filter.clear()
+        self.position_filter.addItem(ALL_POSITIONS_LABEL)
+        self.position_filter.addItems(distinct)
+        self.position_filter.blockSignals(False)
+
+    def _on_position_filter_changed(self, selected: str):
+        self._close_range_popup()
+        if selected == ALL_POSITIONS_LABEL:
+            for row_i in range(self.table.rowCount()):
+                self.table.setRowHidden(row_i, False)
+            self.range_btn.hide()
+        else:
+            for row_i, position in enumerate(self._row_positions):
+                self.table.setRowHidden(row_i, position != selected)
+            self.range_btn.show()
+
+    def _visible_rows(self) -> list[int]:
+        return [r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)]
+
+    def _close_range_popup(self):
+        if self._range_popup is not None:
+            self._range_popup.close()
+            self._range_popup = None
+
+    def _on_range_toggle_clicked(self):
+        if self._range_popup is not None:
+            self._close_range_popup()
+            return
+
+        visible = self._visible_rows()
+        hole_card_pairs = [
+            tuple(self._row_hole_cards[r]) for r in visible if len(self._row_hole_cards[r]) == 2
+        ]
+        popup = RangeGridPopup(hole_card_pairs, len(hole_card_pairs), len(visible), parent=self)
+        pos = self.range_btn.mapToGlobal(QPoint(0, self.range_btn.height()))
+        popup.move(pos)
+        popup.show()
+        self._range_popup = popup
 
     def _on_double_click(self, index):
         hand_id = self.rows[index.row()][0]

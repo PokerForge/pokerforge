@@ -45,7 +45,12 @@ Initial commercial-readiness pass. Highlights:
   tax/accounting-style records, alongside the existing CSV export.
 - Database & Diagnostics now shows the exchange-rate snapshot date used
   for $ conversion (see core/currency.py's `FX_RATES_AS_OF`).
-- 191 automated tests covering the stat engine, both parsers, the SQL
+- Any stat's hand list (villain profile drill-downs, By Position) can
+  now be filtered by position, revealing a "Range Grid" button — a 13x13
+  heatmap of hole cards actually seen for the filtered hands. Clearly
+  labeled as "N of M hands shown," not a claim about someone's true
+  range, since folded hands are never revealed by the site.
+- 208 automated tests covering the stat engine, both parsers, the SQL
   query layer, and the surrounding infrastructure.
 
 ### Known limitations
