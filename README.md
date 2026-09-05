@@ -19,6 +19,15 @@ played against actually plays.
 - **Population** — a sortable villain pool with search/filter, and a full
   stat profile for any opponent (or any group of opponents by player
   type).
+- **CSV export** — hand lists, By Position, the Sessions list, and the
+  villain pool can all be exported.
+- **Multiple profiles** — File > Switch Profile, for a shared computer or
+  tracking two accounts as separate identities. Switching takes effect on
+  restart; see `config/profiles.py`.
+- **Backup & restore** — Tools > Backup My Data / Restore from Backup, a
+  single zip covering the database and settings for the active profile.
+- **Getting Started guide** — Help menu, a plain-language glossary for
+  every stat shown throughout the app.
 
 ## Supported hand-history formats
 
@@ -64,8 +73,18 @@ build_installer.bat  # also wraps that into installer_output\SF-Poker-Setup-*.ex
 ```
 
 The installer installs per-user (no admin/UAC prompt needed) and never
-touches `%APPDATA%\SFPoker\`, so installing, upgrading, or uninstalling
-never risks a player's actual data.
+touches `%APPDATA%\SFPoker\` on install/upgrade; uninstalling offers an
+opt-in (defaults to No) prompt to also delete that data.
+
+### If Windows warns you about the installer
+
+The installer isn't code-signed yet, so Windows SmartScreen will show an
+"Unrecognized app" / "unknown publisher" warning the first time it runs —
+this is expected, not a sign of anything wrong. It happens because the
+`.exe` isn't signed with a paid code-signing certificate, which is a
+separate step (see "Known limitations" below), not because of anything
+the app does. To proceed anyway: click **More info**, then **Run anyway**.
+This warning goes away once the build is signed.
 
 ## Project layout
 
@@ -83,9 +102,13 @@ never risks a player's actual data.
 ## Known limitations / not yet built
 
 - Only two poker-site formats are supported (see above).
-- Single hero identity per install — no multi-profile/multi-user support.
 - No license-key or payment infrastructure yet.
-- No code signing on the Windows build yet (SmartScreen will flag it as
-  from an unknown publisher until it's signed).
+- No code signing on the Windows build yet — see "If Windows warns you"
+  above.
+- Help > Check for Updates is fully built but inert until a real update
+  manifest is hosted somewhere (see `config/version.py`'s
+  `UPDATE_MANIFEST_URL`).
+- Help > Report a Bug opens a blank-recipient mailto: until a real
+  support address is set (see `config/version.py`'s `SUPPORT_EMAIL`).
 - `PRIVACY_POLICY.md` and `TERMS_OF_USE.md` are drafts — have them
   reviewed before relying on them commercially.

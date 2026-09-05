@@ -39,10 +39,6 @@ def _pct(made, opp):
     return round(100.0 * made / opp, 2) if opp else None
 
 
-def _pct(made, opp):
-    return round(100.0 * made / opp, 2) if opp else None
-
-
 _OVERVIEW_SQL = """
 SELECT
     COUNT(*),

@@ -3,11 +3,14 @@ poker_dashboard_legacy.py's SessionsTab — a starting point to iterate on
 once it's confirmed to look/behave the same as the legacy version."""
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
+)
 
 from ui.theme import lbl, GREEN, RED
 from ui.async_worker import AsyncRunner
 from ui.hand_list_dialog import HandListDialog
+from ui.csv_export import export_table_to_csv
 from database.queries import sessions_query, hands_for_session_query
 
 COLUMNS = ["Date", "Stakes", "Hands", "Profit", "BB/100", "EV BB/100", "Hours"]
@@ -20,7 +23,15 @@ class SessionsTab(QWidget, AsyncRunner):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(12)
-        lay.addWidget(lbl("SESSIONS", size=11, dim=True))
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(lbl("SESSIONS", size=11, dim=True))
+        header_row.addStretch()
+        export_btn = QPushButton("Export to CSV...")
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.clicked.connect(lambda: export_table_to_csv(self.table, self, default_filename="sessions.csv"))
+        header_row.addWidget(export_btn)
+        lay.addLayout(header_row)
 
         self.table = QTableWidget()
         self.table.setColumnCount(len(COLUMNS))

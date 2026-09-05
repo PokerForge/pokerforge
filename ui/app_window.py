@@ -22,18 +22,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from datetime import date
 
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QDate, QUrl
+from PyQt6.QtGui import QIcon, QDesktopServices, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFrame, QTabWidget, QComboBox, QProgressDialog, QPushButton,
-    QDialog, QDateEdit, QMessageBox,
+    QDialog, QDateEdit, QMessageBox, QFileDialog,
 )
 
 from core.importer import parse_directory_incremental
-from core.logging_setup import configure_logging, install_crash_handler
-from config.version import APP_VERSION
+from core.logging_setup import configure_logging, install_crash_handler, LOG_PATH
+from config.version import APP_VERSION, SUPPORT_EMAIL
 from core.update_checker import check_for_update
+from core.backup import create_backup, restore_backup
 from config.paths import profile_data_dir, resource_dir
 from ui.theme import STYLE, BG, BG2, GREEN, BORDER, lbl
 from ui.header_banner import HeaderBanner
@@ -46,8 +47,9 @@ from ui.async_worker import AsyncRunner
 from ui.hero_detect import detect_hero, normalize_hero_aliases, dominant_currency
 from ui.hand_history_dirs_dialog import HandHistoryDirsDialog
 from ui.hero_setup_dialog import HeroSetupDialog
-from ui.profile_dialog import ProfileDialog
+from ui.profile_dialog import ProfileDialog, restart_app
 from ui.getting_started_dialog import GettingStartedDialog
+from ui.diagnostics_dialog import DiagnosticsDialog
 from config.profiles import get_active_display_name
 from core.currency import convert_hands_to_usd
 from database.repository import PokerDatabase
@@ -190,6 +192,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             f"QPushButton:disabled {{ color:#888; }}"
         )
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.setToolTip("Refresh (Ctrl+R)")
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         fl.addWidget(self.refresh_btn)
         main_lay.addWidget(fbar)
@@ -209,6 +212,8 @@ class AppWindow(QMainWindow, AsyncRunner):
         wl.setContentsMargins(16, 12, 16, 16)
         wl.addWidget(self.tabs)
         main_lay.addWidget(wrap)
+
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self._on_refresh_clicked)
 
         self._on_period_changed()
 
@@ -293,6 +298,84 @@ class AppWindow(QMainWindow, AsyncRunner):
     def _on_getting_started_clicked(self):
         GettingStartedDialog(parent=self).exec()
 
+    def _on_backup_clicked(self):
+        default_name = f"SF Poker Backup {date.today().isoformat()}.zip"
+        path, _ = QFileDialog.getSaveFileName(self, "Backup My Data", default_name, "Zip Files (*.zip)")
+        if not path:
+            return
+        try:
+            create_backup(self.db.conn, profile_data_dir(), Path(path))
+        except Exception as exc:
+            logger.exception("Backup failed")
+            QMessageBox.warning(self, "Backup Failed", f"Couldn't create the backup:\n{exc}")
+            return
+        QMessageBox.information(self, "Backup Complete", f"Your data was backed up to:\n{path}")
+
+    def _on_restore_clicked(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Restore from Backup", "", "Zip Files (*.zip)")
+        if not path:
+            return
+        reply = QMessageBox.warning(
+            self, "Restore from Backup",
+            "This replaces your current hands, stats, and settings for this profile with "
+            "whatever's in the backup. This cannot be undone.\n\n"
+            "SF Poker will restart afterward. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.db.close()
+            restore_backup(Path(path), profile_data_dir())
+        except Exception as exc:
+            logger.exception("Restore failed")
+            QMessageBox.critical(self, "Restore Failed", f"Couldn't restore the backup:\n{exc}")
+            return
+        restart_app()
+
+    def _on_rebuild_stats_clicked(self):
+        reply = QMessageBox.question(
+            self, "Rebuild Stats Database",
+            "This recomputes every stat from your already-imported hands — useful if numbers "
+            "look wrong after an update. It doesn't re-import or delete any hands, but can take "
+            "a few minutes for a large database. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        total = self.db.hand_count()
+        progress = QProgressDialog(f"Rebuilding stats for {total:,} hands...", None, 0, total, self)
+        progress.setWindowTitle("SF Poker")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setValue(0)
+
+        def on_progress(done, _total):
+            progress.setValue(done)
+            QApplication.processEvents()
+
+        n = self.db.rebuild_hand_player_stats(ev_iterations=500, on_progress=on_progress)
+        progress.setValue(total)
+        QMessageBox.information(self, "Rebuild Complete", f"Rebuilt stats for {n:,} hands.")
+        self._apply_filters()
+
+    def _on_diagnostics_clicked(self):
+        DiagnosticsDialog(self.db, parent=self).exec()
+
+    def _on_report_bug_clicked(self):
+        import urllib.parse
+        subject = urllib.parse.quote("SF Poker Bug Report")
+        body = urllib.parse.quote(
+            "Describe the issue:\n\n\n"
+            "---\n"
+            f"App version: {APP_VERSION}\n"
+            f"Log file: {LOG_PATH}\n"
+            "(Please attach the log file above if possible.)"
+        )
+        to = SUPPORT_EMAIL or ""
+        QDesktopServices.openUrl(QUrl(f"mailto:{to}?subject={subject}&body={body}"))
+
     def _build_menu_bar(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("Manage Hand History Folders...", self._on_manage_folders_clicked)
@@ -300,9 +383,17 @@ class AppWindow(QMainWindow, AsyncRunner):
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
+        tools_menu = self.menuBar().addMenu("&Tools")
+        tools_menu.addAction("Backup My Data...", self._on_backup_clicked)
+        tools_menu.addAction("Restore from Backup...", self._on_restore_clicked)
+        tools_menu.addSeparator()
+        tools_menu.addAction("Rebuild Stats Database...", self._on_rebuild_stats_clicked)
+        tools_menu.addAction("Database && Diagnostics...", self._on_diagnostics_clicked)
+
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("Getting Started...", self._on_getting_started_clicked)
         help_menu.addSeparator()
+        help_menu.addAction("Report a Bug...", self._on_report_bug_clicked)
         help_menu.addAction("Check for Updates...", self._on_check_updates_clicked)
         help_menu.addAction("About SF Poker...", self._on_about_clicked)
 

@@ -82,6 +82,7 @@ class GettingStartedDialog(QDialog):
         self.setStyleSheet(STYLE)
         self.setWindowTitle("Getting Started")
         self.resize(640, 560)
+        self.setModal(True)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 20, 20, 20)

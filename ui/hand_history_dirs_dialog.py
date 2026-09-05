@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.theme import STYLE, lbl
+from core.folder_detect import detect_known_folders
 
 
 class HandHistoryDirsDialog(QDialog):
@@ -23,19 +24,30 @@ class HandHistoryDirsDialog(QDialog):
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(12)
 
+        # Pre-fill with anything auto-detected on a genuinely fresh setup
+        # (current_dirs is empty) — a returning "Manage Folders" call
+        # always passes the real current list, so this never overrides an
+        # existing, deliberate choice.
+        detected = detect_known_folders() if (first_run and not current_dirs) else []
+        initial_dirs = current_dirs + [d for d in detected if d not in current_dirs]
+
         if first_run:
             lay.addWidget(lbl("Welcome to SF Poker", size=16, bold=True))
             lay.addWidget(lbl(
                 "Add the folder(s) where your poker client saves hand histories "
                 "(or where you export them to) — SF Poker scans these for new "
                 "hands every time it starts.", dim=True))
+            if detected:
+                lay.addWidget(lbl(
+                    f"Found {len(detected)} folder(s) automatically — remove any you "
+                    "don't want, or add more below.", size=12, color="#3fb950"))
         else:
             lay.addWidget(lbl(
                 "Folders SF Poker scans for hand histories. Add or remove as needed — "
                 "changes take effect the next time hands are checked.", dim=True))
 
         self.list = QListWidget()
-        self.list.addItems(current_dirs)
+        self.list.addItems(initial_dirs)
         lay.addWidget(self.list, 1)
 
         btn_row = QHBoxLayout()
