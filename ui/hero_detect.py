@@ -29,6 +29,19 @@ def detect_hero(hands: list[Hand]) -> str:
     return counts.most_common(1)[0][0] if counts else "Hero"
 
 
+def hero_hand_share(hands: list[Hand], hero: str) -> float:
+    """What fraction of `hands` include `hero` as a seated player. A real
+    hero's own hand-history export should include them in nearly every
+    hand — a low share is the signature of a wrong-folder pick (e.g. a
+    shared/example export, or someone else's history) rather than a
+    trustworthy detection, even though detect_hero() still returns
+    *someone* as "most frequent" no matter what the data actually is."""
+    if not hands:
+        return 0.0
+    count = sum(1 for h in hands if any(p.name == hero for p in h.players))
+    return count / len(hands)
+
+
 def dominant_currency(hands: list[Hand], hero: str) -> str:
     """The currency symbol to report money in — whichever currency the
     hero's own hands are mostly played in. Hero plays a small minority of

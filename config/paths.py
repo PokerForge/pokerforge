@@ -23,15 +23,17 @@ def app_data_dir() -> Path:
     return d
 
 
-def profile_data_dir() -> Path:
-    """The active profile's own data folder — settings/database live here
-    (see config/profiles.py). The default profile's data stays exactly
-    where app_data_dir() already points every existing (pre-multi-profile)
+def profile_data_dir(profile_id: str | None = None) -> Path:
+    """The given profile's own data folder — settings/database live here
+    (see config/profiles.py). Defaults to the currently active profile if
+    none is given. The default profile's data stays exactly where
+    app_data_dir() already points every existing (pre-multi-profile)
     install at, so nothing needs migrating unless a second profile is
     actually created. Deferred import to avoid a circular import with
     config.profiles (which itself imports app_data_dir from here)."""
     from config.profiles import DEFAULT_PROFILE_ID, get_active_profile_id
-    profile_id = get_active_profile_id()
+    if profile_id is None:
+        profile_id = get_active_profile_id()
     d = app_data_dir() if profile_id == DEFAULT_PROFILE_ID else app_data_dir() / "profiles" / profile_id
     d.mkdir(parents=True, exist_ok=True)
     return d

@@ -13,6 +13,7 @@ every period/stakes change, which is what made "All Time" slow before.
 Sessions and Stats tabs are placeholders for now — Overview and Population
 are the two built out first since they're the most valuable/emblematic.
 """
+import json
 import logging
 import sys
 import time
@@ -30,11 +31,13 @@ from PyQt6.QtWidgets import (
     QDialog, QDateEdit, QMessageBox, QFileDialog,
 )
 
-from core.importer import parse_directory_incremental
+from core.importer import parse_directory_incremental, missing_configured_folders
 from core.logging_setup import configure_logging, install_crash_handler, LOG_PATH
+from core.single_instance import acquire_single_instance_lock
 from config.version import APP_VERSION, SUPPORT_EMAIL
 from core.update_checker import check_for_update
 from core.backup import create_backup, restore_backup
+from core.db_health import check_database_health
 from config.paths import profile_data_dir, resource_dir
 from ui.theme import STYLE, BG, BG2, GREEN, BORDER, lbl
 from ui.header_banner import HeaderBanner
@@ -44,10 +47,11 @@ from ui.sessions_tab import SessionsTab
 from ui.stats_tab import StatsTab
 from ui.population_tab import PopulationTab
 from ui.async_worker import AsyncRunner
-from ui.hero_detect import detect_hero, normalize_hero_aliases, dominant_currency
+from ui.hero_detect import detect_hero, normalize_hero_aliases, dominant_currency, hero_hand_share
 from ui.hand_history_dirs_dialog import HandHistoryDirsDialog
 from ui.hero_setup_dialog import HeroSetupDialog
 from ui.profile_dialog import ProfileDialog, restart_app
+from ui.settings_dialog import SettingsDialog
 from ui.getting_started_dialog import GettingStartedDialog
 from ui.diagnostics_dialog import DiagnosticsDialog
 from config.profiles import get_active_display_name
@@ -153,6 +157,11 @@ class AppWindow(QMainWindow, AsyncRunner):
         hl = QHBoxLayout(header)
         hl.setContentsMargins(24, 0, 24, 0)
         hl.addStretch()
+        self.folder_warning_lbl = lbl("", size=12, color="#f85149")
+        self.folder_warning_lbl.setToolTip("File > Manage Hand History Folders to fix this")
+        self.folder_warning_lbl.hide()
+        hl.addWidget(self.folder_warning_lbl)
+        hl.addSpacing(12)
         self.header_hands_lbl = lbl(f"Hero: {hero}  |  {db.hand_count():,} hands loaded", size=12, color="white")
         hl.addWidget(self.header_hands_lbl)
         main_lay.addWidget(header)
@@ -215,7 +224,17 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         QShortcut(QKeySequence("Ctrl+R"), self, activated=self._on_refresh_clicked)
 
+        self._update_folder_warning()
         self._on_period_changed()
+
+    def _update_folder_warning(self):
+        missing = missing_configured_folders(get_hand_history_dirs())
+        if missing:
+            noun = "folder" if len(missing) == 1 else "folders"
+            self.folder_warning_lbl.setText(f"⚠ {len(missing)} hand-history {noun} not found")
+            self.folder_warning_lbl.show()
+        else:
+            self.folder_warning_lbl.hide()
 
     def _on_period_changed(self):
         """Period changed — the set of stakes worth offering depends on the
@@ -283,6 +302,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             self.refresh_btn.setEnabled(True)
             self.refresh_btn.setText("↻ Refresh")
         self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
+        self._update_folder_warning()
         self._apply_filters()
 
     def _on_manage_folders_clicked(self):
@@ -294,6 +314,9 @@ class AppWindow(QMainWindow, AsyncRunner):
 
     def _on_switch_profile_clicked(self):
         ProfileDialog(parent=self).exec()
+
+    def _on_settings_clicked(self):
+        SettingsDialog(parent=self).exec()
 
     def _on_getting_started_clicked(self):
         GettingStartedDialog(parent=self).exec()
@@ -334,6 +357,18 @@ class AppWindow(QMainWindow, AsyncRunner):
             return
         restart_app()
 
+    def _on_verify_health_clicked(self):
+        report = check_database_health(self.db)
+        if report.ok:
+            QMessageBox.information(
+                self, "Database Health",
+                f"Everything checks out — {report.hand_count:,} hands, "
+                f"{report.stats_row_count:,} stat rows, integrity check passed.")
+        else:
+            QMessageBox.warning(
+                self, "Database Health",
+                "Found some issues:\n\n" + "\n".join(f"• {issue}" for issue in report.issues))
+
     def _on_rebuild_stats_clicked(self):
         reply = QMessageBox.question(
             self, "Rebuild Stats Database",
@@ -363,6 +398,74 @@ class AppWindow(QMainWindow, AsyncRunner):
     def _on_diagnostics_clicked(self):
         DiagnosticsDialog(self.db, parent=self).exec()
 
+    def _on_load_demo_data_clicked(self):
+        from config.profiles import list_profiles, create_profile, set_active_profile
+
+        existing = {name: pid for pid, name in list_profiles()}
+        demo_id = existing.get("Demo")
+
+        if demo_id:
+            reply = QMessageBox.question(
+                self, "Load Demo Data",
+                "A Demo profile already exists. Regenerate it with fresh sample data "
+                "(replacing what's there), or just switch to it as-is?\n\n"
+                "Yes = regenerate, No = switch without changing it.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                return
+            regenerate = reply == QMessageBox.StandardButton.Yes
+        else:
+            reply = QMessageBox.question(
+                self, "Load Demo Data",
+                "This creates a new \"Demo\" profile with synthetic hand histories, so "
+                "you can try SF Poker without needing your own data. It won't affect "
+                "your real profile. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            demo_id = create_profile("Demo")
+            regenerate = True
+
+        if regenerate:
+            self._populate_demo_profile(demo_id)
+
+        set_active_profile(demo_id)
+        QMessageBox.information(self, "Load Demo Data",
+                                 "SF Poker needs to restart to switch to the Demo profile.")
+        restart_app()
+
+    def _populate_demo_profile(self, demo_id: str):
+        from core.demo_data import generate_demo_hands, DEMO_HERO
+
+        demo_dir = profile_data_dir(demo_id)
+        db_path = demo_dir / "sf_poker.db"
+        if db_path.exists():
+            db_path.unlink()
+        (demo_dir / "settings.json").write_text(json.dumps({
+            "hero_aliases": [], "hero_name": DEMO_HERO, "currency_symbol": "£",
+            "position_table_stat_ids": None, "trend_stat_ids": None,
+            "trend_interval_days": 14, "hand_history_dirs": [],
+        }, indent=2), encoding="utf-8")
+
+        progress = QProgressDialog("Generating demo data...", None, 0, 0, self)
+        progress.setWindowTitle("SF Poker")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+        QApplication.processEvents()
+        try:
+            hands = generate_demo_hands()
+            demo_db = PokerDatabase(db_path)
+            try:
+                demo_db.import_hands(hands, ev_iterations=100)
+            finally:
+                demo_db.close()
+        finally:
+            progress.close()
+
     def _on_report_bug_clicked(self):
         import urllib.parse
         subject = urllib.parse.quote("SF Poker Bug Report")
@@ -380,6 +483,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction("Manage Hand History Folders...", self._on_manage_folders_clicked)
         file_menu.addAction("Switch Profile...", self._on_switch_profile_clicked)
+        file_menu.addAction("Settings...", self._on_settings_clicked)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
@@ -387,8 +491,11 @@ class AppWindow(QMainWindow, AsyncRunner):
         tools_menu.addAction("Backup My Data...", self._on_backup_clicked)
         tools_menu.addAction("Restore from Backup...", self._on_restore_clicked)
         tools_menu.addSeparator()
+        tools_menu.addAction("Verify Database Health...", self._on_verify_health_clicked)
         tools_menu.addAction("Rebuild Stats Database...", self._on_rebuild_stats_clicked)
         tools_menu.addAction("Database && Diagnostics...", self._on_diagnostics_clicked)
+        tools_menu.addSeparator()
+        tools_menu.addAction("Load Demo Data...", self._on_load_demo_data_clicked)
 
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("Getting Started...", self._on_getting_started_clicked)
@@ -481,12 +588,25 @@ def main():
     icon_path = resource_dir() / "assets" / "app_icon_chip.ico"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
+
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock is None:
+        # A second launch (e.g. double-clicking the desktop shortcut
+        # twice) would otherwise open a second process against the same
+        # SQLite database — refuse cleanly instead of risking a confusing
+        # "database is locked" error later.
+        QMessageBox.information(None, "SF Poker", "SF Poker is already running.")
+        return
+
     db = PokerDatabase(DB_PATH)
 
     dirs = get_hand_history_dirs()
-    if not dirs:
-        # Fresh install (or every folder was removed) — nothing to scan
-        # until the player tells us where their hand histories live.
+    if not dirs and get_hero_name() is None:
+        # Genuinely nothing set up yet (no folders AND no hero identity) —
+        # a profile that already has a hero (e.g. Load Demo Data, or a
+        # real profile someone intentionally cleared all folders from
+        # while keeping its already-imported data) has nothing to fix
+        # here, even though its folder list also happens to be empty.
         wizard = HandHistoryDirsDialog([], first_run=True)
         wizard.exec()
         dirs = wizard.selected_dirs()
@@ -510,7 +630,8 @@ def main():
         if hands:
             # Let the player correct a wrong guess before it's locked in —
             # nothing else here can undo a bad auto-detection later.
-            confirm = HeroSetupDialog(detected_hero, detected_currency)
+            share = hero_hand_share(hands, detected_hero)
+            confirm = HeroSetupDialog(detected_hero, detected_currency, hero_share=share)
             confirm.exec()
             hero = confirm.selected_hero() or detected_hero
             currency = confirm.selected_currency() or detected_currency

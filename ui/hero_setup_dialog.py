@@ -11,13 +11,20 @@ from ui.theme import STYLE, lbl
 
 _COMMON_CURRENCIES = ["£", "$", "€"]
 
+# Below this, the detected name appears in too small a fraction of hands
+# to plausibly be the account owner of this actual data — a real hero's
+# own export should include them in nearly every hand, so a low share
+# usually means the wrong folder was picked (a shared/sample export,
+# someone else's history, etc.), not a trustworthy detection.
+_LOW_SHARE_WARNING_THRESHOLD = 0.5
+
 
 class HeroSetupDialog(QDialog):
-    def __init__(self, detected_hero: str, detected_currency: str, parent=None):
+    def __init__(self, detected_hero: str, detected_currency: str, hero_share: float | None = None, parent=None):
         super().__init__(parent)
         self.setStyleSheet(STYLE)
         self.setWindowTitle("Confirm Your Details")
-        self.resize(420, 200)
+        self.resize(420, 220)
         self.setModal(True)
 
         lay = QVBoxLayout(self)
@@ -27,6 +34,15 @@ class HeroSetupDialog(QDialog):
         lay.addWidget(lbl(
             "We detected the following from your hand histories — "
             "correct them if they're wrong.", dim=True))
+
+        if hero_share is not None and hero_share < _LOW_SHARE_WARNING_THRESHOLD:
+            warning = lbl(
+                f"⚠ \"{detected_hero}\" only appears in {hero_share:.0%} of the hands found — "
+                "this doesn't look like it's all your own history. Double-check the username "
+                "below, and that you pointed SF Poker at the right folder.",
+                size=12, color="#f85149")
+            warning.setWordWrap(True)
+            lay.addWidget(warning)
 
         hero_row = QHBoxLayout()
         hero_row.addWidget(lbl("Your username", dim=True))

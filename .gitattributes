@@ -1,0 +1,4 @@
+# Normalize line endings so every commit doesn't warn about LF->CRLF
+# conversion on Windows — text files are stored as LF in the repo and
+# checked out using whatever the platform's git config prefers.
+* text=auto eol=lf

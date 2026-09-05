@@ -86,5 +86,11 @@ def restart_app():
     sys.executable/sys.argv cover both correctly) and exits this process —
     the freshly-started one re-reads config/profiles.py's registry, which
     is exactly how the newly-switched profile takes effect."""
+    from core.single_instance import release_held_lock
+    # Without this, the new process could start up (Python/Qt import time
+    # dwarfs how long this process takes to actually exit, but it's not
+    # guaranteed) and spuriously see this soon-to-exit process as "already
+    # running" via the single-instance lock.
+    release_held_lock()
     subprocess.Popen([sys.executable] + sys.argv)
     sys.exit(0)

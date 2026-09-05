@@ -6,6 +6,14 @@ from core.xml_hand_parser import parse_session_file
 logger = logging.getLogger(__name__)
 
 
+def missing_configured_folders(directories: list[str]) -> list[str]:
+    """Which of the configured hand-history folders don't currently exist
+    — used to surface a visible warning in the UI (a folder that's been
+    moved/renamed since it was configured otherwise just silently
+    contributes 0 hands, with only a log line to explain why)."""
+    return [d for d in directories if not Path(d).is_dir()]
+
+
 def parse_directory(directory: str | Path):
     """Returns (hands, errors, files_seen). A single .txt export or .xml
     session file can contain many hands, so files_seen and len(hands) are
