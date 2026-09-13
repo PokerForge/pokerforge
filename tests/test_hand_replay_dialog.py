@@ -99,3 +99,49 @@ def test_switching_hands_resets_action_step_index(qapp):
     dlg._go_next_hand()
     assert dlg.idx == -1
     dlg.timer.stop()
+
+
+def test_last_button_jumps_to_hand_end_before_advancing_to_next_hand(qapp):
+    # Each test hand has exactly one replay event, so idx goes -1 -> 0.
+    hands = [_hand("h1"), _hand("h2")]
+    dlg = HandReplayDialog(hands[0], "Hero", hand_list=hands, start_index=0)
+
+    dlg._go_last()  # not yet at the end of h1's own actions
+    assert dlg.hand_index == 0
+    assert dlg.idx == 0
+
+    dlg._go_last()  # already at the end -> advance to the next hand
+    assert dlg.hand_index == 1
+    assert dlg.hand is hands[1]
+    dlg.timer.stop()
+
+
+def test_last_button_stays_put_at_hand_end_when_no_next_hand_exists(qapp):
+    dlg = HandReplayDialog(_hand("h1"), "Hero")  # single-hand call, no hand_list
+    dlg._go_last()
+    assert dlg.idx == 0
+    dlg._go_last()  # still at the end, but there's no next hand to advance to
+    assert dlg.idx == 0
+    assert dlg.hand_index == 0
+    dlg.timer.stop()
+
+
+def test_first_button_goes_to_previous_hand_from_a_freshly_loaded_hand(qapp):
+    # A freshly-loaded hand always starts at idx=-1 (its own start), so
+    # pressing "first" immediately steps back a hand rather than no-op'ing.
+    hands = [_hand("h1"), _hand("h2"), _hand("h3")]
+    dlg = HandReplayDialog(hands[0], "Hero", hand_list=hands, start_index=2)
+
+    dlg._go_first()
+    assert dlg.hand_index == 1
+    assert dlg.hand is hands[1]
+    dlg.timer.stop()
+
+
+def test_first_button_stays_put_at_hand_start_when_no_previous_hand_exists(qapp):
+    dlg = HandReplayDialog(_hand("h1"), "Hero")  # single-hand call, no hand_list
+    dlg.idx = 0
+    dlg._go_first()
+    assert dlg.idx == -1
+    assert dlg.hand_index == 0
+    dlg.timer.stop()

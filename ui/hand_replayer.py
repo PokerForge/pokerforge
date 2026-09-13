@@ -740,6 +740,9 @@ class HandReplayDialog(QDialog):
         self.btn_playpause.clicked.connect(self._toggle_play)
         self.btn_next.clicked.connect(self._go_next)
         self.btn_last.clicked.connect(self._go_last)
+        if len(self.hand_list) > 1:
+            self.btn_first.setToolTip("Jump to hand start — press again to go to the previous hand")
+            self.btn_last.setToolTip("Jump to hand end — press again to go to the next hand")
         media_row.addStretch()
         for b in (self.btn_first, self.btn_prev, self.btn_playpause, self.btn_next, self.btn_last):
             media_row.addWidget(b)
@@ -827,11 +830,21 @@ class HandReplayDialog(QDialog):
 
     def _go_first(self):
         self._pause()
+        # Already at the start of this hand's actions and there's an
+        # earlier hand in the list — treat a second press as "previous
+        # hand" instead of a no-op, rather than requiring the separate
+        # Previous/Next Hand row above for that.
+        if self.idx == -1 and self.hand_index > 0:
+            self._go_prev_hand()
+            return
         self.idx = -1
         self._render_state()
 
     def _go_last(self):
         self._pause()
+        if self.idx >= len(self.events) - 1 and self.hand_index < len(self.hand_list) - 1:
+            self._go_next_hand()
+            return
         self.idx = len(self.events) - 1
         self._render_state()
 
