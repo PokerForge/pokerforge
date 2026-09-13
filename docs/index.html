@@ -121,6 +121,52 @@
   footer a { color: var(--dim); }
   footer .links { margin-top: 8px; }
   footer .links a { margin: 0 8px; }
+  .section-intro {
+    color: var(--dim);
+    font-size: 15px;
+    max-width: 640px;
+    margin: -12px 0 24px;
+  }
+  .screens {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .screen {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .screen img {
+    width: 100%;
+    display: block;
+  }
+  .screen .placeholder {
+    aspect-ratio: 16 / 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    color: var(--dim);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    background: repeating-linear-gradient(45deg, var(--bg3), var(--bg3) 10px, var(--bg2) 10px, var(--bg2) 20px);
+  }
+  .screen .caption {
+    padding: 14px 16px;
+  }
+  .screen .caption strong {
+    display: block;
+    color: var(--text);
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .screen .caption span {
+    color: var(--dim);
+    font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -158,7 +204,7 @@
       </div>
       <div class="feature">
         <h3>Stats</h3>
-        <p>Your own game broken down by position, an auto-generated "Your Leaks" section, and trends over time.</p>
+        <p>Your own game broken down by position, plus trends over time you can customise and backtest.</p>
       </div>
       <div class="feature">
         <h3>Population</h3>
@@ -171,6 +217,76 @@
       <div class="feature">
         <h3>Backup &amp; restore</h3>
         <p>One-click backup and restore, plus multiple profiles for a shared computer or separate accounts.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="intelligence">
+  <div class="wrap">
+    <h2>PokerForge Intelligence</h2>
+    <p class="section-intro">
+      Stop tracking your poker. Start fixing it. Instead of another page of
+      stats to interpret yourself, PokerForge tells you what's actually
+      costing you money, backed by your own hand history and your own
+      population — then takes you straight to the hands.
+    </p>
+    <div class="features">
+      <div class="feature">
+        <h3>Find Your Leaks</h3>
+        <p>Ranks your biggest deviations from your own population by position, weighted by how much they actually cost you — not deviation alone.</p>
+      </div>
+      <div class="feature">
+        <h3>Study Queue</h3>
+        <p>A short, prioritized list of your biggest leaks — one click opens the replayer loaded with your own recent hands behind it.</p>
+      </div>
+      <div class="feature">
+        <h3>Villain Exploit Reports</h3>
+        <p>Every opponent gets a player-type read and specific exploit notes, each backed by a real sample size and clickable to example hands.</p>
+      </div>
+      <div class="feature">
+        <h3>Similar Players</h3>
+        <p>Instantly see who else in your pool plays like the villain you're looking at, ranked by overall stat profile.</p>
+      </div>
+      <div class="feature">
+        <h3>Pool Insights</h3>
+        <p>Population-wide patterns — like river bet-sizing versus revealed hand strength — mined across your whole showdown history.</p>
+      </div>
+      <div class="feature">
+        <h3>Tilt &amp; Deviation Reports</h3>
+        <p>Does your VPIP shift after a big loss? Did a change you made to your own stats actually help your win rate? PokerForge checks your history against itself.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <h2>See it in action</h2>
+    <p class="section-intro">Real PokerForge, not mockups.</p>
+    <div class="screens">
+      <div class="screen">
+        <!-- Drop a real screenshot at docs/screenshots/leaks.png and swap
+             this placeholder div for <img src="screenshots/leaks.png" alt="..."> -->
+        <div class="placeholder">Screenshot coming soon</div>
+        <div class="caption">
+          <strong>Leaks by Position</strong>
+          <span>Your Study Queue and ranked leaks, with a category filter and click-through to hands.</span>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="placeholder">Screenshot coming soon</div>
+        <div class="caption">
+          <strong>Hand Replayer</strong>
+          <span>PT4-style replay with a range-grid heatmap of hole cards seen, and hand-to-hand navigation.</span>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="placeholder">Screenshot coming soon</div>
+        <div class="caption">
+          <strong>Villain Profile</strong>
+          <span>Exploit notes, similar players, and a full stat breakdown for any opponent you've played.</span>
+        </div>
       </div>
     </div>
   </div>
