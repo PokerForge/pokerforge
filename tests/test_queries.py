@@ -261,3 +261,18 @@ def test_showdown_hand_ids_query_respects_the_limit(db):
 
     hand_ids = showdown_hand_ids_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), limit=2)
     assert len(hand_ids) == 2
+
+
+def test_hero_vpip_sequence_query_orders_by_played_at(db):
+    from database.queries import hero_vpip_sequence_query
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-01T10:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", profit=-5.0, vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T09:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", profit=1.0, vpip=0, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h3", player_name="Villain1", played_at="2026-06-01T11:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30")
+
+    rows = hero_vpip_sequence_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+    assert [r[0] for r in rows] == ["2026-06-01T09:00:00", "2026-06-01T10:00:00"]
+    assert rows[1][1] == -5.0  # profit
+    assert rows[1][3] == 1  # vpip

@@ -12,6 +12,7 @@ from ui.async_worker import AsyncRunner
 from ui.hand_list_dialog import HandListDialog
 from ui.csv_export import export_table_to_csv
 from ui.pdf_export import export_table_to_pdf
+from ui.tilt_report_dialog import TiltReportDialog
 from database.queries import sessions_query, hands_for_session_query
 
 COLUMNS = ["Date", "Stakes", "Hands", "Profit", "BB/100", "EV BB/100", "Hours"]
@@ -37,6 +38,11 @@ class SessionsTab(QWidget, AsyncRunner):
         export_pdf_btn.setToolTip("A printable summary — for your own tax/accounting records")
         export_pdf_btn.clicked.connect(self._on_export_pdf)
         header_row.addWidget(export_pdf_btn)
+        tilt_btn = QPushButton("Tilt Report...")
+        tilt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        tilt_btn.setToolTip("Does your VPIP shift in the minutes after a big loss?")
+        tilt_btn.clicked.connect(self._on_tilt_report_clicked)
+        header_row.addWidget(tilt_btn)
         lay.addLayout(header_row)
 
         self.table = QTableWidget()
@@ -57,6 +63,7 @@ class SessionsTab(QWidget, AsyncRunner):
         self._sessions = []
         self._d_from = None
         self._d_to = None
+        self._stake = None
 
     def refresh(self, db, hero, d_from, d_to, currency="£", stake=None):
         self._currency = currency
@@ -64,6 +71,7 @@ class SessionsTab(QWidget, AsyncRunner):
         self._hero = hero
         self._d_from = d_from
         self._d_to = d_to
+        self._stake = stake
         self.run_async(
             lambda: sessions_query(db, hero, d_from, d_to, stake),
             self._render,
@@ -80,6 +88,9 @@ class SessionsTab(QWidget, AsyncRunner):
         export_table_to_pdf(
             self.table, self, title="PokerForge Session Summary", subtitle=subtitle,
             default_filename="session_summary.pdf")
+
+    def _on_tilt_report_clicked(self):
+        TiltReportDialog(self._db, self._hero, self._d_from, self._d_to, self._stake, parent=self).exec()
 
     def _on_double_click(self, index):
         session_date, stakes_label, hands, profit, bb100, ev_bb100, hours = self._sessions[index.row()]

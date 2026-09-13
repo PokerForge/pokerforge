@@ -256,6 +256,25 @@ def population_summary_query(db, hero: str, d_from: date, d_to: date, stake: str
     return result
 
 
+def hero_vpip_sequence_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None):
+    """(played_at, profit, big_blind, vpip, vpip_pfr_opp) for every one of
+    hero's hands in the period, ordered by played_at — the backing data
+    for core.tilt_correlation, which needs to walk hands in sequence to
+    find what happened shortly after a big loss. Scoped to VPIP only for
+    now (the most fundamental "playing too loose" signal); the same
+    shape would extend to another stat by selecting its own made/
+    opportunity columns instead."""
+    lo, hi = _date_bounds(d_from, d_to)
+    where = ["player_name = ?", "played_at >= ?", "played_at < ?"]
+    params = [hero, lo, hi]
+    if stake:
+        where.append("stakes_label = ?")
+        params.append(stake)
+    sql = (f"SELECT played_at, profit, big_blind, vpip, vpip_pfr_opp FROM hand_player_stats "
+           f"WHERE {' AND '.join(where)} ORDER BY played_at")
+    return db.conn.execute(sql, params).fetchall()
+
+
 def showdown_hand_ids_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
                               limit: int | None = 5000) -> list[str]:
     """Hand ids where some player OTHER than hero reached showdown — the
