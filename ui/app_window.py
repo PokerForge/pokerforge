@@ -222,9 +222,31 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.tabs.addTab(self.tab_sessions, "  Sessions  ")
         self.tabs.addTab(self.tab_stats, "  Stats  ")
         self.tabs.addTab(self.tab_population, "  Population  ")
+        # Shown above the tabs (not per-tab) whenever the database is
+        # genuinely empty — every individual tab otherwise renders as a
+        # blank chart or a table full of "—" dashes with no explanation,
+        # which reads as broken rather than "nothing imported yet" to
+        # someone who just installed the app.
+        self.no_hands_banner = QFrame()
+        self.no_hands_banner.setStyleSheet(
+            f"background:{BG2};border:1px solid {BORDER};border-radius:6px;")
+        nb_lay = QHBoxLayout(self.no_hands_banner)
+        nb_lay.setContentsMargins(16, 10, 16, 10)
+        nb_lay.addWidget(lbl(
+            "No hands imported yet — new hands are picked up automatically once you "
+            "play, or check where PokerForge is looking.", dim=True))
+        nb_lay.addStretch()
+        no_hands_manage_btn = QPushButton("Manage Folders...")
+        no_hands_manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        no_hands_manage_btn.clicked.connect(self._on_manage_folders_clicked)
+        nb_lay.addWidget(no_hands_manage_btn)
+        self.no_hands_banner.hide()
+
         wrap = QWidget()
         wl = QVBoxLayout(wrap)
         wl.setContentsMargins(16, 12, 16, 16)
+        wl.setSpacing(12)
+        wl.addWidget(self.no_hands_banner)
         wl.addWidget(self.tabs)
         main_lay.addWidget(wrap)
 
@@ -235,6 +257,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         self._apply_live_watch_setting()
 
         self._update_folder_warning()
+        self._update_no_hands_banner()
         self._on_period_changed()
 
     def _apply_live_watch_setting(self):
@@ -264,6 +287,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         if new_count:
             self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
             self._update_folder_warning()
+            self._update_no_hands_banner()
             self._apply_filters()
 
     def _update_folder_warning(self):
@@ -274,6 +298,9 @@ class AppWindow(QMainWindow, AsyncRunner):
             self.folder_warning_lbl.show()
         else:
             self.folder_warning_lbl.hide()
+
+    def _update_no_hands_banner(self):
+        self.no_hands_banner.setVisible(self.db.hand_count() == 0)
 
     def _on_period_changed(self):
         """Period changed — the set of stakes worth offering depends on the
@@ -342,6 +369,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             self.refresh_btn.setText("↻ Refresh")
         self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
         self._update_folder_warning()
+        self._update_no_hands_banner()
         self._apply_filters()
         self._apply_live_watch_setting()
 
