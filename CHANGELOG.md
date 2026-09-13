@@ -4,9 +4,9 @@ All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 
-## [1.0.0] — Unreleased
+## [1.0.0-beta.1] — 2026-09-13
 
-Initial commercial-readiness pass. Highlights:
+First early-access build. Highlights:
 
 - Overview, Sessions, Stats, and Population tabs, each validated against
   real PT4 exports.

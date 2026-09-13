@@ -4,7 +4,7 @@
 > substitute for review — pair this with `TERMS_OF_USE.md` (the actual
 > usage terms) and have both reviewed together before relying on either.
 
-Copyright (c) 2026 [YOUR NAME / COMPANY NAME]. All rights reserved.
+Copyright (c) 2026 PokerForge LTD (United Kingdom). All rights reserved.
 
 This software and its source code are proprietary. No part of this
 repository may be copied, modified, distributed, or used to create

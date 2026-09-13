@@ -3,7 +3,20 @@ called from the UI thread's async worker) and must never treat "not set
 up yet" as an error the same way it treats "actually failed"."""
 import json
 
+import pytest
+
 import core.update_checker as uc
+
+
+@pytest.fixture(autouse=True)
+def _default_to_no_github_repo(monkeypatch):
+    # config.version.GITHUB_REPO now has a real value ("PokerForge/pokerforge")
+    # — without this, every test below that only patches UPDATE_MANIFEST_URL
+    # would silently hit the real GitHub API instead of exercising the
+    # manifest-URL fallback path it's actually testing. Tests that DO want
+    # to exercise the GitHub path set their own GITHUB_REPO explicitly,
+    # which overrides this.
+    monkeypatch.setattr(uc, "GITHUB_REPO", None)
 
 
 def _manifest_url(tmp_path, data):

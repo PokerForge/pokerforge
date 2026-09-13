@@ -6,7 +6,7 @@
 > liability, and any consumer-protection requirements that apply where you
 > sell — before publishing or relying on it.
 
-_Last updated: [DATE]_
+_Last updated: 2026-09-13_
 
 ## The short version
 
@@ -34,8 +34,8 @@ shared with PokerForge, its developer, or any third party.**
 
 ## Data about other players
 
-Because hand histories necessarily include other players at the table, SF
-Poker's database contains other people's usernames and derived statistics
+Because hand histories necessarily include other players at the table,
+PokerForge's database contains other people's usernames and derived statistics
 (e.g. how often they raise). This data:
 
 - Comes only from hand histories your own poker client already gave you
@@ -59,22 +59,20 @@ PokerForge does not integrate with any analytics provider, crash-reporting
 tool, or advertising network, and makes no network requests automatically
 or in the background.
 
-The one exception: choosing **Help > Check for Updates** fetches a small
-version-number file from [HOSTING LOCATION — fill in once release hosting
-is decided] to tell you whether a newer version exists. This request
-contains no hand-history data, no player names, no hero identity, and no
-other information about you or your poker activity — it is a plain HTTP
-request for a static file, the same as visiting a webpage. It only ever
-happens when you click that menu item; nothing runs on a timer or checks
-automatically on startup. [Update this section again if that changes in a
-future version, or if you add license-key validation or crash reporting —
+The one exception: choosing **Help > Check for Updates** checks for a
+newer release. This request contains no hand-history data, no player
+names, no hero identity, and no other information about you or your
+poker activity — it only ever happens when you click that menu item;
+nothing runs on a timer or checks automatically on startup. [Update this
+section again if you add license-key validation or crash reporting —
 each of those would need its own disclosure here.]
 
 ## Changes to this policy
 
-[Describe how you'll notify users of changes, if at all — e.g. "the
-version history on the download page."]
+Material changes will be noted in the in-app "What's New" popup shown
+after an update, and in the version history published alongside each
+release.
 
 ## Contact
 
-[Your contact email or support channel.]
+[Support email not yet set up — update this once one exists.]
