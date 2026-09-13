@@ -116,7 +116,7 @@ class RangeGridPopup(QFrame):
     cell_clicked = pyqtSignal(str, list)  # forwarded from RangeGridWidget
 
     def __init__(self, hand_entries: list[tuple[str, tuple[str, str]]],
-                 shown_count: int, total_count: int, parent=None):
+                 shown_count: int, total_count: int, parent=None, positions_mixed: bool = False):
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet(f"background:{BG2}; border:1px solid {BORDER}; border-radius:8px;")
 
@@ -124,9 +124,11 @@ class RangeGridPopup(QFrame):
         lay.setContentsMargins(14, 14, 14, 14)
         lay.setSpacing(10)
 
+        mixed_note = " Hands span every position, not just one — a range is normally position-specific." \
+            if positions_mixed else ""
         caveat = lbl(
             f"{shown_count} of {total_count} hand(s) here had visible cards — "
-            "not this player's true range, just what we've actually seen. "
+            "not this player's true range, just what we've actually seen." + mixed_note + " "
             "Click a cell to replay its hand(s).",
             size=11, dim=True)
         caveat.setWordWrap(True)

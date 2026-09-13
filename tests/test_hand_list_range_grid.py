@@ -76,12 +76,38 @@ def test_position_filter_has_all_positions_plus_distinct_positions_found(panel):
     assert set(items[1:]) == {"BTN", "SB"}
 
 
-def test_range_button_hidden_until_a_specific_position_is_selected(panel):
-    assert panel.range_btn.isHidden() is True
+def test_range_button_is_always_visible(panel):
+    assert panel.range_btn.isHidden() is False
     panel.position_filter.setCurrentText("BTN")
     assert panel.range_btn.isHidden() is False
     panel.position_filter.setCurrentText("All Positions")
-    assert panel.range_btn.isHidden() is True
+    assert panel.range_btn.isHidden() is False
+
+
+def test_range_toggle_works_for_all_positions_and_flags_the_popup_as_mixed(panel):
+    from ui.range_grid import RangeGridWidget
+    panel._on_range_toggle_clicked()
+    assert panel._range_popup is not None
+
+    # All three hands have known hole cards, across both BTN and SB.
+    grid_widget = panel._range_popup.findChild(RangeGridWidget)
+    assert "AKs — seen 1x" in grid_widget.cells["AKs"].toolTip()
+    assert "QQ — seen 1x" in grid_widget.cells["QQ"].toolTip()
+    assert "72o — seen 1x" in grid_widget.cells["72o"].toolTip()
+
+    from PyQt6.QtWidgets import QLabel
+    all_text = " ".join(l.text() for l in panel._range_popup.findChildren(QLabel))
+    assert "span every position" in all_text
+    panel._close_range_popup()
+
+
+def test_range_toggle_for_one_position_does_not_flag_as_mixed(panel):
+    from PyQt6.QtWidgets import QLabel
+    panel.position_filter.setCurrentText("BTN")
+    panel._on_range_toggle_clicked()
+    all_text = " ".join(l.text() for l in panel._range_popup.findChildren(QLabel))
+    assert "span every position" not in all_text
+    panel._close_range_popup()
 
 
 def test_selecting_a_position_hides_non_matching_rows(panel):

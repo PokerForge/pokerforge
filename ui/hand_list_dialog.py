@@ -111,15 +111,13 @@ class HandListPanel(QWidget):
         self.position_filter.currentTextChanged.connect(self._on_position_filter_changed)
         header_row.addWidget(self.position_filter)
 
-        # Only meaningful once filtered to one position — a range grid
-        # mixing every position together isn't really "a range" at all.
         self.range_btn = QPushButton("▦ Range Grid")
         self.range_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.range_btn.setToolTip(
             "Shows hole cards actually seen (not this player's true range — "
-            "folded hands are never revealed) for the hands currently shown")
+            "folded hands are never revealed) for the hands currently shown. "
+            "Filter to one position to keep it a true range; \"All Positions\" mixes them together.")
         self.range_btn.clicked.connect(self._on_range_toggle_clicked)
-        self.range_btn.hide()
         header_row.addWidget(self.range_btn)
 
         export_btn = QPushButton("Export to CSV...")
@@ -268,11 +266,9 @@ class HandListPanel(QWidget):
         if selected == ALL_POSITIONS_LABEL:
             for row_i in range(self.table.rowCount()):
                 self.table.setRowHidden(row_i, False)
-            self.range_btn.hide()
         else:
             for row_i, position in enumerate(self._row_positions):
                 self.table.setRowHidden(row_i, position != selected)
-            self.range_btn.show()
 
     def _visible_rows(self) -> list[int]:
         return [r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)]
@@ -292,7 +288,9 @@ class HandListPanel(QWidget):
             (self.rows[r][0], tuple(self._row_hole_cards[r]))
             for r in visible if len(self._row_hole_cards[r]) == 2
         ]
-        popup = RangeGridPopup(hand_entries, len(hand_entries), len(visible), parent=self)
+        positions_mixed = self.position_filter.currentText() == ALL_POSITIONS_LABEL
+        popup = RangeGridPopup(hand_entries, len(hand_entries), len(visible), parent=self,
+                                positions_mixed=positions_mixed)
         popup.cell_clicked.connect(self._on_range_cell_clicked)
         pos = self.range_btn.mapToGlobal(QPoint(0, self.range_btn.height()))
         popup.move(pos)
