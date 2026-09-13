@@ -275,23 +275,21 @@ class VillainDetail(QWidget, AsyncRunner):
         # they were one long stacked column) rather than one long scroll —
         # Exploits leads since "what should I do differently against this
         # player" is more actionable than raw numbers, and it means you no
-        # longer have to scroll past 5 stat categories to reach it. My Notes
-        # sits below the tabs, always visible regardless of which is active,
-        # since it's unrelated to any one of them and isn't villain-specific
-        # content that needs rebuilding on every render.
-        below_container = QWidget()
-        below_lay = QVBoxLayout(below_container)
-        below_lay.setContentsMargins(0, 10, 0, 0)
-        below_lay.setSpacing(16)
-
+        # longer have to scroll past 5 stat categories to reach it.
         self.below_tabs = QTabWidget()
-        exploits_scroll, self.exploits_lay = _scroll_page()
-        similar_scroll, self.similar_lay = _scroll_page()
-        stats_scroll, self.stats_lay = _scroll_page()
-        self.below_tabs.addTab(exploits_scroll, "Exploits")
-        self.below_tabs.addTab(similar_scroll, "Similar Players")
-        self.below_tabs.addTab(stats_scroll, "Stats")
-        below_lay.addWidget(self.below_tabs, 1)
+
+        # The Exploits tab page has its own inner dynamic layout
+        # (self.exploits_lay, cleared and rebuilt every render) PLUS a
+        # notes box built once here and never touched again — My Notes
+        # needs to survive the live-refresh watcher re-rendering this same
+        # villain every few seconds while playing, which would otherwise
+        # wipe out whatever was just typed.
+        exploits_scroll, exploits_outer_lay = _scroll_page()
+        exploits_dynamic = QWidget()
+        self.exploits_lay = QVBoxLayout(exploits_dynamic)
+        self.exploits_lay.setContentsMargins(0, 0, 0, 0)
+        self.exploits_lay.setSpacing(16)
+        exploits_outer_lay.addWidget(exploits_dynamic)
 
         notes_frame = QFrame()
         notes_frame.setObjectName("card")
@@ -303,9 +301,15 @@ class VillainDetail(QWidget, AsyncRunner):
         notes.setPlaceholderText("Add your own notes about this player...")
         notes.setMaximumHeight(70)
         nfl.addWidget(notes)
-        below_lay.addWidget(notes_frame)
+        exploits_outer_lay.addWidget(notes_frame)
 
-        self.v_splitter.addWidget(below_container)
+        similar_scroll, self.similar_lay = _scroll_page()
+        stats_scroll, self.stats_lay = _scroll_page()
+        self.below_tabs.addTab(exploits_scroll, "Exploits")
+        self.below_tabs.addTab(similar_scroll, "Similar Players")
+        self.below_tabs.addTab(stats_scroll, "Stats")
+
+        self.v_splitter.addWidget(self.below_tabs)
 
         # Give the graph a real chunk of extra room by default (it used to
         # stay pinned near its initial pixel size while all extra window
