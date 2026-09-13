@@ -75,4 +75,4 @@ release.
 
 ## Contact
 
-[Support email not yet set up — update this once one exists.]
+pokerforge@outlook.com

@@ -84,4 +84,4 @@ your customers end up being.]
 
 ## 10. Contact
 
-[Support email not yet set up — update this once one exists.]
+pokerforge@outlook.com

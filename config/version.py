@@ -16,8 +16,5 @@ GITHUB_REPO = "PokerForge/pokerforge"
 # reports itself as "not set up" instead of failing against a fake URL.
 UPDATE_MANIFEST_URL = None
 
-# Help > Report a Bug's mailto: recipient. None until a real support
-# address is decided — left blank in the mailto: link rather than
-# invented, so the user picks who to send it to themselves in the
-# meantime instead of it silently going nowhere.
-SUPPORT_EMAIL = None
+# Help > Report a Bug's mailto: recipient.
+SUPPORT_EMAIL = "pokerforge@outlook.com"

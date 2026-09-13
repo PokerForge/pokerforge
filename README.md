@@ -121,13 +121,9 @@ the warning looks for a new user):
 ## Known limitations / not yet built
 
 - Only two poker-site formats are supported (see above).
-- No license-key or payment infrastructure yet.
+- No license-key or payment infrastructure yet — the app is fully free
+  during early access.
 - No code signing on the Windows build yet — see "If Windows warns you"
   above.
-- Help > Check for Updates is fully built but inert until a real update
-  manifest is hosted somewhere (see `config/version.py`'s
-  `UPDATE_MANIFEST_URL`).
-- Help > Report a Bug opens a blank-recipient mailto: until a real
-  support address is set (see `config/version.py`'s `SUPPORT_EMAIL`).
 - `PRIVACY_POLICY.md` and `TERMS_OF_USE.md` are drafts — have them
   reviewed before relying on them commercially.
