@@ -256,6 +256,33 @@ def population_summary_query(db, hero: str, d_from: date, d_to: date, stake: str
     return result
 
 
+def showdown_hand_ids_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
+                              limit: int | None = 5000) -> list[str]:
+    """Hand ids where some player OTHER than hero reached showdown — the
+    cheap pre-filter for core.river_sizing.classify_river_sizing_vs_strength,
+    which needs full Hand objects (raw actions, hole cards) that only
+    exist for a small fraction of hands. Loading every hand in the
+    database just to discard the ones that never reached a river bet
+    would be wasteful; this narrows to the (usually 15-20%) of hands
+    that could possibly qualify before any Python-side hand loading
+    happens. `limit` caps how many hand ids come back — a full-database
+    population sizing pass is meant to be a periodic, on-demand report
+    (Population tab's Pool Insights), not a live-refreshing query, so an
+    unbounded pass over a very large database isn't worth the latency
+    for one more precision point; None removes the cap entirely."""
+    lo, hi = _date_bounds(d_from, d_to)
+    where = ["reached_showdown = 1", "player_name != ?", "played_at >= ?", "played_at < ?"]
+    params = [hero, lo, hi]
+    if stake:
+        where.append("stakes_label = ?")
+        params.append(stake)
+    sql = f"SELECT DISTINCT hand_id FROM hand_player_stats WHERE {' AND '.join(where)}"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return [r[0] for r in db.conn.execute(sql, params)]
+
+
 def available_stakes_query(db, hero: str, d_from: date, d_to: date) -> list[str]:
     lo, hi = _date_bounds(d_from, d_to)
     rows = db.conn.execute(

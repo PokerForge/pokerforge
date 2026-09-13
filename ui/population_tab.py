@@ -17,6 +17,7 @@ from ui.player_classify import classify_player
 from ui.theme import ACCENT2, BG3, GREEN, RED, lbl
 from ui.async_worker import AsyncRunner
 from ui.csv_export import export_table_to_csv
+from ui.pool_insights_dialog import PoolInsightsDialog
 from database.queries import population_summary_query
 
 MIN_HAND_OPTIONS = [("Min 1 hand", 1), ("Min 10 hands", 10), ("Min 50 hands", 50),
@@ -85,6 +86,11 @@ class PopulationTab(QWidget, AsyncRunner):
         pool_header = QHBoxLayout()
         pool_header.addWidget(lbl("VILLAIN POOL", size=11, dim=True))
         pool_header.addStretch()
+        insights_btn = QPushButton("Pool Insights...")
+        insights_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        insights_btn.setToolTip("Population-wide patterns across your whole showdown history")
+        insights_btn.clicked.connect(self._on_pool_insights_clicked)
+        pool_header.addWidget(insights_btn)
         export_btn = QPushButton("Export to CSV...")
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         export_btn.clicked.connect(lambda: export_table_to_csv(self.table, self, default_filename="villain_pool.csv"))
@@ -245,6 +251,9 @@ class PopulationTab(QWidget, AsyncRunner):
                 self.table.setRowHeight(row_i, 34)
         finally:
             self.table.setUpdatesEnabled(True)
+
+    def _on_pool_insights_clicked(self):
+        PoolInsightsDialog(self.db, self.hero, self._d_from, self._d_to, self._stake, parent=self).exec()
 
     def _on_select(self, row, _col):
         name_item = self.table.item(row, 0)

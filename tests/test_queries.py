@@ -238,3 +238,26 @@ def test_hands_for_stat_query_supports_fold_to_steal(db):
 
     rows = hands_for_stat_query(db, "Hero", "fold_to_steal", date(2026, 6, 1), date(2026, 6, 30))
     assert {r[0] for r in rows} == {"h1"}
+
+
+def test_showdown_hand_ids_query_finds_hands_where_a_non_hero_reached_showdown(db):
+    from database.queries import showdown_hand_ids_query
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", reached_showdown=0)
+    _insert_stats_row(db, hand_id="h1", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", reached_showdown=1)
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", reached_showdown=1)  # only hero showed down
+
+    hand_ids = showdown_hand_ids_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+    assert hand_ids == ["h1"]
+
+
+def test_showdown_hand_ids_query_respects_the_limit(db):
+    from database.queries import showdown_hand_ids_query
+    for i in range(5):
+        _insert_stats_row(db, hand_id=f"h{i}", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                           big_blind=0.30, stakes_label="£0.15/£0.30", reached_showdown=1)
+
+    hand_ids = showdown_hand_ids_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), limit=2)
+    assert len(hand_ids) == 2
