@@ -371,7 +371,10 @@ class StatsTab(QWidget, AsyncRunner):
             row_w.clicked.connect(lambda l=leak: self._on_cross_leak_clicked(l))
             rl = QHBoxLayout(row_w)
             rl.setContentsMargins(12, 8, 12, 8)
-            rl.addWidget(lbl(f"{leak.stat_label} — {leak.position}", size=12), 1)
+            direction = "higher" if leak.deviation > 0 else "lower"
+            rl.addWidget(lbl(
+                f"{leak.stat_label} — {leak.position}  ·  {abs(leak.deviation):.1f} pts {direction}",
+                size=12), 1)
             rl.addWidget(lbl(
                 f"You {leak.hero_rate:.1f}%  ·  Pop {leak.population_rate:.1f}%  ·  {leak.sample:,} hands",
                 dim=True, size=11))

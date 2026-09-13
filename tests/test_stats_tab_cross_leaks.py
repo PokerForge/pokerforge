@@ -70,6 +70,16 @@ def test_clicking_a_cross_leak_queries_hands_for_that_stat_and_position(stats_ta
     assert calls == [("fold_3bet", "BB")]
 
 
+def test_rows_below_the_callout_also_state_their_own_deviation(stats_tab):
+    from PyQt6.QtWidgets import QLabel
+    higher = _leak(stat_label="Second", hero_rate=74.0, population_rate=55.0)  # +19.0, higher
+    lower = _leak(stat_label="Third", hero_rate=4.0, population_rate=8.7)  # -4.7, lower
+    card = stats_tab._build_cross_leaks_card([_leak(stat_label="Biggest"), higher, lower])
+    all_text = " ".join(l.text() for l in card.findChildren(QLabel))
+    assert "19.0 pts higher" in all_text
+    assert "4.7 pts lower" in all_text
+
+
 def test_only_shows_up_to_five_leaks_total(stats_tab):
     from PyQt6.QtWidgets import QLabel
     leaks = [_leak(stat_label=f"Leak{i}") for i in range(10)]
