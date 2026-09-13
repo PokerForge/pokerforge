@@ -8,11 +8,11 @@ played against actually plays.
 
 ## Features
 
-- **Overview** — a PT4-style cumulative results graph (Total / Showdown /
+- **Overview** — a cumulative results graph (Total / Showdown /
   Non-Showdown / EV, in $ or BB/100), with a draggable summary box and
   one-click copy to clipboard.
 - **Sessions** — every session grouped by date and stakes, drilling down
-  to a full PT4-style hand grid, drilling further into a hand replayer.
+  to a full hand grid, drilling further into a hand replayer.
 - **Stats** — your own game broken down by position, an auto-generated
   "Your Leaks" section gated on sample size, and a trend view showing
   whether a stat is actually moving over time.

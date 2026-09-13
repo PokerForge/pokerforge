@@ -141,6 +141,7 @@
   .screen img {
     width: 100%;
     display: block;
+    cursor: zoom-in;
   }
   .screen .caption {
     padding: 14px 16px;
@@ -154,6 +155,39 @@
   .screen .caption span {
     color: var(--dim);
     font-size: 13px;
+  }
+  .lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(1, 4, 9, 0.92);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    cursor: zoom-out;
+  }
+  .lightbox.open {
+    display: flex;
+  }
+  .lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .lightbox-close {
+    position: fixed;
+    top: 20px;
+    right: 28px;
+    font-size: 32px;
+    line-height: 1;
+    color: var(--text);
+    opacity: 0.8;
+  }
+  .lightbox-close:hover {
+    opacity: 1;
   }
 </style>
 </head>
@@ -251,24 +285,24 @@
 <section id="screenshots">
   <div class="wrap">
     <h2>See it in action</h2>
-    <p class="section-intro">Real PokerForge, not mockups.</p>
+    <p class="section-intro">Real PokerForge, not mockups. Click a screenshot to zoom in.</p>
     <div class="screens">
       <div class="screen">
-        <img src="screenshots/leaks.png" alt="Leaks by Position tab, showing the Study Queue and ranked leak list" loading="lazy">
+        <img src="screenshots/leaks.png" alt="Leaks by Position tab, showing the Study Queue and ranked leak list" loading="lazy" onclick="openLightbox(this.src, this.alt)">
         <div class="caption">
           <strong>Leaks by Position</strong>
           <span>Your Study Queue and ranked leaks, with a category filter and click-through to hands.</span>
         </div>
       </div>
       <div class="screen">
-        <img src="screenshots/replayer.png" alt="Hand replayer showing a completed hand at showdown" loading="lazy">
+        <img src="screenshots/replayer.png" alt="Hand replayer showing a completed hand at showdown" loading="lazy" onclick="openLightbox(this.src, this.alt)">
         <div class="caption">
           <strong>Hand Replayer</strong>
-          <span>PT4-style replay with a range-grid heatmap of hole cards seen, and hand-to-hand navigation.</span>
+          <span>Step through the action street by street, with a range-grid heatmap of hole cards seen and hand-to-hand navigation.</span>
         </div>
       </div>
       <div class="screen">
-        <img src="screenshots/villain.png" alt="Villain profile Exploits tab, showing exploit notes and a results graph" loading="lazy">
+        <img src="screenshots/villain.png" alt="Villain profile Exploits tab, showing exploit notes and a results graph" loading="lazy" onclick="openLightbox(this.src, this.alt)">
         <div class="caption">
           <strong>Villain Profile</strong>
           <span>Exploit notes, similar players, and a full stat breakdown for any opponent you've played.</span>
@@ -277,6 +311,11 @@
     </div>
   </div>
 </section>
+
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+  <span class="lightbox-close">&times;</span>
+  <img id="lightbox-img" src="" alt="">
+</div>
 
 <section id="privacy">
   <div class="wrap">
@@ -330,6 +369,21 @@
     </div>
   </div>
 </footer>
+
+<script>
+  function openLightbox(src, alt) {
+    var img = document.getElementById('lightbox-img');
+    img.src = src;
+    img.alt = alt;
+    document.getElementById('lightbox').classList.add('open');
+  }
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('open');
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeLightbox();
+  });
+</script>
 
 </body>
 </html>

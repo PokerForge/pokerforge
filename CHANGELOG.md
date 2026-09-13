@@ -9,7 +9,7 @@ Help > Check for Updates manifest would draw from whatever's newest here.
 First early-access build. Highlights:
 
 - Overview, Sessions, Stats, and Population tabs, each validated against
-  real PT4 exports.
+  real hand-history exports.
 - Grosvenor Poker (XML) and iPoker Network (text) hand-history support.
 - Multi-profile support (File > Switch Profile).
 - CSV export for hand lists, By Position, Sessions, and the villain pool.

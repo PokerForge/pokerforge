@@ -91,7 +91,7 @@ class GettingStartedDialog(QDialog):
         lay.addWidget(lbl(
             "PokerForge tracks every hand your poker client saves and turns it "
             "into stats across four tabs: Overview (your results over time), "
-            "Sessions (a PT4-style hand-by-hand grid), Stats (your own game "
+            "Sessions (a detailed hand-by-hand grid), Stats (your own game "
             "broken down by position, with auto-detected leaks), and "
             "Population (how any opponent you've played actually plays). "
             "Below is what the stats you'll see everywhere actually mean.",
