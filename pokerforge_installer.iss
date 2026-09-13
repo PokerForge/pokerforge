@@ -43,6 +43,12 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Messages]
+; Default Welcome text is just "This will install X on your computer" —
+; adds a one-line reminder of what the app actually does, in case some
+; time passed between downloading the installer and running it.
+WelcomeLabel2=This will install [name/ver] on your computer.%n%nPokerForge analyses your poker hand histories, finds your biggest leaks, and shows you exactly what to work on.%n%nIt is recommended that you close all other applications before continuing.
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 
