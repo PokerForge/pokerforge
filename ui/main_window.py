@@ -17,7 +17,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QFrame, QPushButton, QTextEdit, QGraphicsBlurEffect,
-    QSplitter, QLabel, QCheckBox,
+    QSplitter, QLabel, QCheckBox, QTabWidget,
 )
 from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 
@@ -34,6 +34,22 @@ from ui.hand_list_dialog import HandListDialog
 from ui.graph_overlay import HoverCrosshair
 
 POSITION_ORDER = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB', 'BTN/SB']
+
+
+def _scroll_page():
+    """One scrollable tab page — same shape as ui/stats_tab.py's own
+    _scroll_page() helper, duplicated locally rather than imported since
+    ui/stats_tab.py already imports FROM this module (importing back
+    would be circular)."""
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+    inner = QWidget()
+    lay = QVBoxLayout(inner)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(16)
+    scroll.setWidget(inner)
+    return scroll, lay
 
 
 class _ClickableFrame(QFrame):
@@ -253,20 +269,43 @@ class VillainDetail(QWidget, AsyncRunner):
         self.hand_end_lbl.hide()
         self.plot.installEventFilter(self)
 
-        # Everything below (stat grid, vs-open, exploit notes, notes box) is
-        # cheap QFrame/QLabel content — cleared and rebuilt per villain,
-        # same as the legacy dashboard does for these specific sections.
-        # Lives in its own scroll area so dragging the splitter handle down
-        # to grow the graph doesn't just clip this section.
-        below_scroll = QScrollArea()
-        below_scroll.setWidgetResizable(True)
-        below_scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        below_widget = QWidget()
-        self.below = QVBoxLayout(below_widget)
-        self.below.setContentsMargins(0, 10, 0, 0)
-        self.below.setSpacing(16)
-        below_scroll.setWidget(below_widget)
-        self.v_splitter.addWidget(below_scroll)
+        # Below the graph: Exploits / Similar Players / Stats as their own
+        # tabs (each cheap QFrame/QLabel content — cleared and rebuilt per
+        # villain, same as the legacy dashboard did for these sections when
+        # they were one long stacked column) rather than one long scroll —
+        # Exploits leads since "what should I do differently against this
+        # player" is more actionable than raw numbers, and it means you no
+        # longer have to scroll past 5 stat categories to reach it. My Notes
+        # sits below the tabs, always visible regardless of which is active,
+        # since it's unrelated to any one of them and isn't villain-specific
+        # content that needs rebuilding on every render.
+        below_container = QWidget()
+        below_lay = QVBoxLayout(below_container)
+        below_lay.setContentsMargins(0, 10, 0, 0)
+        below_lay.setSpacing(16)
+
+        self.below_tabs = QTabWidget()
+        exploits_scroll, self.exploits_lay = _scroll_page()
+        similar_scroll, self.similar_lay = _scroll_page()
+        stats_scroll, self.stats_lay = _scroll_page()
+        self.below_tabs.addTab(exploits_scroll, "Exploits")
+        self.below_tabs.addTab(similar_scroll, "Similar Players")
+        self.below_tabs.addTab(stats_scroll, "Stats")
+        below_lay.addWidget(self.below_tabs, 1)
+
+        notes_frame = QFrame()
+        notes_frame.setObjectName("card")
+        nfl = QVBoxLayout(notes_frame)
+        nfl.setContentsMargins(12, 12, 12, 12)
+        nfl.setSpacing(6)
+        nfl.addWidget(lbl("MY NOTES  (not saved between sessions yet)", size=11, dim=True))
+        notes = QTextEdit()
+        notes.setPlaceholderText("Add your own notes about this player...")
+        notes.setMaximumHeight(70)
+        nfl.addWidget(notes)
+        below_lay.addWidget(notes_frame)
+
+        self.v_splitter.addWidget(below_container)
 
         # Give the graph a real chunk of extra room by default (it used to
         # stay pinned near its initial pixel size while all extra window
@@ -309,9 +348,9 @@ class VillainDetail(QWidget, AsyncRunner):
                                      self._current_d_from, self._current_d_to, self._current_stake)
         HandListDialog(rows, self.db, self._current_name, title, self.currency, parent=self).exec()
 
-    def _clear_below(self):
-        while self.below.count():
-            item = self.below.takeAt(0)
+    def _clear(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
             w = item.widget()
             if w:
                 w.deleteLater()
@@ -429,7 +468,10 @@ class VillainDetail(QWidget, AsyncRunner):
             self.hand_end_lbl.hide()
         self._apply_unit()
 
-        self._clear_below()
+        self._clear(self.exploits_lay)
+        self._clear(self.similar_lay)
+        self._clear(self.stats_lay)
+        self.below_tabs.setTabVisible(1, not is_group)
 
         for category in STAT_CATEGORIES:
             stats_in_cat = [s for s in STAT_REGISTRY if s['category'] == category]
@@ -469,7 +511,7 @@ class VillainDetail(QWidget, AsyncRunner):
 
             cfl.addWidget(header_btn)
             cfl.addWidget(grid_holder)
-            self.below.addWidget(card_frame)
+            self.stats_lay.addWidget(card_frame)
 
         # 3-bet/fold-vs-open-by-position section removed for now (per user
         # request) — vs_open is still computed and available in `result`
@@ -497,18 +539,19 @@ class VillainDetail(QWidget, AsyncRunner):
             rl.addWidget(lbl(f"{icon}  {title}", bold=True, size=12))
             rl.addWidget(lbl(advice, dim=True, size=11))
             lfl.addWidget(row_w)
-        self.below.addWidget(leaks_frame)
+        self.exploits_lay.addWidget(leaks_frame)
+        self.exploits_lay.addStretch()
 
         if not is_group:
             similar = find_similar_villains(name, self._all_rows)
+            sim_frame = QFrame()
+            sim_frame.setObjectName("card")
+            sfl = QVBoxLayout(sim_frame)
+            sfl.setContentsMargins(12, 12, 12, 12)
+            sfl.setSpacing(8)
+            sfl.addWidget(lbl(f"SIMILAR PLAYERS  ·  overall stat profile closest to {name}",
+                               size=11, dim=True))
             if similar:
-                sim_frame = QFrame()
-                sim_frame.setObjectName("card")
-                sfl = QVBoxLayout(sim_frame)
-                sfl.setContentsMargins(12, 12, 12, 12)
-                sfl.setSpacing(8)
-                sfl.addWidget(lbl(f"SIMILAR PLAYERS  ·  overall stat profile closest to {name}",
-                                   size=11, dim=True))
                 for sp in similar:
                     row_w = _ClickableFrame()
                     row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
@@ -520,20 +563,13 @@ class VillainDetail(QWidget, AsyncRunner):
                     rl.addWidget(lbl(sp.name, size=12), 1)
                     rl.addWidget(lbl(f"{sp.similarity:.0f}% similar  ·  {sp.hands:,} hands", dim=True, size=11))
                     sfl.addWidget(row_w)
-                self.below.addWidget(sim_frame)
+            else:
+                sfl.addWidget(lbl("No one in your current data has a close enough overall stat profile yet.",
+                                   dim=True))
+            self.similar_lay.addWidget(sim_frame)
+        self.similar_lay.addStretch()
 
-        notes_frame = QFrame()
-        notes_frame.setObjectName("card")
-        nfl = QVBoxLayout(notes_frame)
-        nfl.setContentsMargins(12, 12, 12, 12)
-        nfl.setSpacing(6)
-        nfl.addWidget(lbl("MY NOTES  (not saved between sessions yet)", size=11, dim=True))
-        notes = QTextEdit()
-        notes.setPlaceholderText("Add your own notes about this player...")
-        notes.setMaximumHeight(70)
-        nfl.addWidget(notes)
-        self.below.addWidget(notes_frame)
-        self.below.addStretch()
+        self.stats_lay.addStretch()
 
 
 # Note: the real application entry point is ui/app_window.py's

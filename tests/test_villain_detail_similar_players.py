@@ -47,7 +47,7 @@ def test_similar_players_card_appears_when_a_similar_villain_exists(detail):
     }
     detail._render_villain("Target", _empty_result())
 
-    all_text = " ".join(l.text() for l in detail.below.parentWidget().findChildren(QLabel))
+    all_text = " ".join(l.text() for l in detail.similar_lay.parentWidget().findChildren(QLabel))
     assert "SIMILAR PLAYERS" in all_text
     assert "Twin" in all_text
 
@@ -57,8 +57,9 @@ def test_no_similar_players_card_when_none_qualify(detail):
     detail._all_rows = {"Target": _row("Target", vpip=25, pfr=20)}  # only the target itself
     detail._render_villain("Target", _empty_result())
 
-    all_text = " ".join(l.text() for l in detail.below.parentWidget().findChildren(QLabel))
-    assert "SIMILAR PLAYERS" not in all_text
+    all_text = " ".join(l.text() for l in detail.similar_lay.parentWidget().findChildren(QLabel))
+    assert "SIMILAR PLAYERS" in all_text  # tab still shows, with an explicit empty-state message
+    assert "No one in your current data" in all_text
 
 
 def test_no_similar_players_card_for_a_group_view(detail):
@@ -69,8 +70,20 @@ def test_no_similar_players_card_for_a_group_view(detail):
     }
     detail._render_villain("Some Group", _empty_result(), is_group=True)
 
-    all_text = " ".join(l.text() for l in detail.below.parentWidget().findChildren(QLabel))
+    all_text = " ".join(l.text() for l in detail.similar_lay.parentWidget().findChildren(QLabel))
     assert "SIMILAR PLAYERS" not in all_text
+    assert detail.below_tabs.isTabVisible(1) is False
+
+
+def test_similar_players_tab_visible_again_after_returning_from_a_group_view(detail):
+    detail._all_rows = {
+        "Target": _row("Target", vpip=25, pfr=20),
+        "Twin": _row("Twin", vpip=26, pfr=21),
+    }
+    detail._render_villain("Some Group", _empty_result(), is_group=True)
+    assert detail.below_tabs.isTabVisible(1) is False
+    detail._render_villain("Target", _empty_result())
+    assert detail.below_tabs.isTabVisible(1) is True
 
 
 def test_clicking_a_similar_player_calls_show_villain_with_current_filters(detail, monkeypatch):
