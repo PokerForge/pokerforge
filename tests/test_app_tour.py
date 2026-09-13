@@ -153,6 +153,42 @@ def test_leaks_step_switches_to_the_leaks_sub_tab(win):
     assert win.tab_stats.sub_tabs.currentIndex() == 1
 
 
+def test_villain_step_selects_the_first_villain_when_the_pool_has_one(win):
+    from PyQt6.QtWidgets import QTableWidgetItem
+    from ui.app_tour import _select_first_villain
+    win.tab_population.table.setRowCount(1)
+    win.tab_population.table.setItem(0, 0, QTableWidgetItem("SomeVillain"))
+
+    _select_first_villain(win)
+
+    assert win.tabs.currentWidget() is win.tab_population
+    assert win.tab_population._selected == "SomeVillain"
+    assert win.tab_population.detail.below_tabs.currentIndex() == 0
+
+
+def test_villain_step_does_nothing_when_the_pool_is_empty(win):
+    from ui.app_tour import _select_first_villain
+    assert win.tab_population.table.rowCount() == 0
+
+    _select_first_villain(win)  # must not raise
+
+    assert win.tabs.currentWidget() is win.tab_population
+    assert win.tab_population._selected is None
+
+
+def test_villain_detail_step_still_spotlights_the_panel_when_pool_is_empty(win):
+    # The detail panel itself is always shown (it's either the "Select a
+    # villain" placeholder or a real profile) — only its inner content
+    # differs, so this step should still produce a real, non-hidden target
+    # even with nothing to select yet.
+    from ui.app_tour import _select_first_villain
+    step = TourStep(title="Villain", text="...", target=lambda w: w.tab_population.detail,
+                     before_show=_select_first_villain)
+    tour = TourOverlay(win)
+    tour.start(steps=[step])
+    assert not tour._target_rect.isNull()
+
+
 def test_take_the_tour_menu_action_starts_a_tour(win):
     win._on_take_tour_clicked()
     assert win._tour is not None

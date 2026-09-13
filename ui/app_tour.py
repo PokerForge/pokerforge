@@ -48,6 +48,20 @@ def _show_tab(tab_attr: str):
     return _go
 
 
+def _select_first_villain(win):
+    """Population tab + click the first row, if the pool has one — on a
+    genuinely fresh install there may be no villains yet, in which case
+    this leaves the detail panel on its own "Select a villain" placeholder
+    rather than erroring; the tour step's target is then simply hidden
+    (see TourOverlay._show_step's isHidden() check), and the step falls
+    back to a plain, un-spotlit message instead of failing outright."""
+    win.tabs.setCurrentWidget(win.tab_population)
+    table = win.tab_population.table
+    if table.rowCount() > 0:
+        win.tab_population._on_select(0, 0)
+        win.tab_population.detail.below_tabs.setCurrentIndex(0)  # Exploits
+
+
 TOUR_STEPS = [
     TourStep(
         title="Welcome to PokerForge",
@@ -98,10 +112,18 @@ TOUR_STEPS = [
     ),
     TourStep(
         title="Population — everyone you've played against",
-        text="A full stat profile for any opponent, with exploit notes, similar "
-             "players, and pool-wide patterns under Pool Insights.",
+        text="Every opponent you've faced, searchable and sortable — plus pool-wide "
+             "patterns across your whole showdown history under Pool Insights.",
         target=lambda w: w.tab_population,
         before_show=_show_tab("tab_population"),
+    ),
+    TourStep(
+        title="A full profile for any villain",
+        text="Click a name in the pool for their complete profile: exploit notes "
+             "with a recommended strategy, players with a similar overall style, "
+             "and their full stat breakdown.",
+        target=lambda w: w.tab_population.detail,
+        before_show=_select_first_villain,
     ),
     TourStep(
         title="Keep it up to date",
