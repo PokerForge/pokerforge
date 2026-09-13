@@ -635,6 +635,33 @@ def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int
     return len(hands)
 
 
+def _prompt_no_hands_found_at_first_run(dirs):
+    """Shown when the first-run wizard's chosen folder(s) yield zero
+    hands, instead of silently locking in a meaningless "Hero" name/£
+    currency placeholder with no explanation. Offers to fix the folder
+    selection immediately rather than requiring a trip through Settings
+    later — a scan with the corrected folders happens on next launch,
+    not inline here, to avoid duplicating the scan/import/progress-
+    dialog machinery a second time in the same run."""
+    msg = QMessageBox(
+        QMessageBox.Icon.Information, "No hands found yet",
+        "PokerForge scanned the folder(s) you chose but didn't find any "
+        "hand-history files yet.\n\nIf you haven't played a hand yet, "
+        "there's nothing to do — new hands are picked up automatically "
+        "once you play. If this looks wrong, you can check which "
+        "folder(s) PokerForge is watching.")
+    manage_btn = msg.addButton("Manage Folders...", QMessageBox.ButtonRole.ActionRole)
+    msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+    msg.exec()
+    if msg.clickedButton() is manage_btn:
+        folders_dlg = HandHistoryDirsDialog(dirs, first_run=False)
+        if folders_dlg.exec():
+            set_hand_history_dirs(folders_dlg.selected_dirs())
+            QMessageBox.information(
+                None, "PokerForge",
+                "Saved. PokerForge will scan these folders the next time it starts.")
+
+
 def main():
     # stdout is block-buffered (not line-buffered) when not attached to a
     # real terminal, so these prints otherwise never appear if the process
@@ -718,10 +745,16 @@ def main():
             hero = confirm.selected_hero() or detected_hero
             currency = confirm.selected_currency() or detected_currency
         else:
+            # Nothing to detect from yet — rather than silently locking in
+            # a meaningless "Hero" placeholder with no explanation (which
+            # would then match nothing once real hands DO show up), say so
+            # plainly and offer to fix the folder selection right now.
             hero, currency = detected_hero, detected_currency
+            _prompt_no_hands_found_at_first_run(dirs)
         set_hero_name(hero)
         set_currency_symbol(currency)
         logger.info("Detected hero: %s, currency: %s", hero, currency)
+        GettingStartedDialog().exec()
 
     if hands:
         normalize_hero_aliases(hands, hero)
