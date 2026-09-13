@@ -56,13 +56,14 @@ def test_github_release_newer_than_current_reports_update_available(monkeypatch)
 
         def read(self):
             import json as _json
-            return _json.dumps({
+            return _json.dumps([{
                 "tag_name": "v9.9.9",
                 "html_url": "https://github.com/someone/somerepo/releases/tag/v9.9.9",
                 "body": "Big release",
+                "prerelease": False,
                 "assets": [{"name": "PokerForge-Setup-9.9.9.exe",
                             "browser_download_url": "https://example.com/PokerForge-Setup-9.9.9.exe"}],
-            }).encode('utf-8')
+            }]).encode('utf-8')
 
     monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
     monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
@@ -84,7 +85,54 @@ def test_github_release_missing_tag_is_not_checked(monkeypatch):
 
         def read(self):
             import json as _json
-            return _json.dumps({"body": "no tag_name field"}).encode('utf-8')
+            return _json.dumps([{"body": "no tag_name field"}]).encode('utf-8')
+
+    monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+    result = uc.check_for_update()
+    assert result.checked is False
+    assert result.error
+
+
+def test_github_finds_a_prerelease_that_releases_latest_would_miss(monkeypatch):
+    """The whole reason this hits /releases and takes [0] instead of the
+    /releases/latest endpoint: GitHub's own "latest" endpoint excludes
+    pre-releases entirely (404s if the newest release is one), which
+    would make an early-access build's update check permanently fail."""
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            import json as _json
+            return _json.dumps([{
+                "tag_name": "v1.0.0-beta.2",
+                "html_url": "https://github.com/someone/somerepo/releases/tag/v1.0.0-beta.2",
+                "prerelease": True,
+                "assets": [],
+            }]).encode('utf-8')
+
+    monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")
+    monkeypatch.setattr(uc, "APP_VERSION", "1.0.0-beta.1")
+    result = uc.check_for_update()
+    assert result.checked is True
+    assert result.latest_version == "1.0.0-beta.2"
+
+
+def test_github_empty_releases_list_is_not_checked(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"[]"
 
     monkeypatch.setattr(uc.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
     monkeypatch.setattr(uc, "GITHUB_REPO", "someone/somerepo")

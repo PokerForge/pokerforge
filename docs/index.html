@@ -198,7 +198,11 @@
       and <code>iPoker Network</code> (text exports). Windows 10/11.
     </p>
     <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/PokerForge/pokerforge/releases/latest">Download the installer</a>
+      <!-- Deliberately the releases LIST page, not /releases/latest —
+           that endpoint excludes pre-releases, and early access builds
+           are always marked as one (see core/update_checker.py). The
+           list page always shows the newest release regardless. -->
+      <a class="btn btn-primary" href="https://github.com/PokerForge/pokerforge/releases">Download the installer</a>
     </div>
     <p class="note">
       The installer isn't code-signed yet, so Windows SmartScreen may show

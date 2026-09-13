@@ -57,11 +57,21 @@ def _version_gt(a: str, b: str) -> bool:
 
 
 def _check_github_releases(repo: str, timeout: float) -> UpdateCheckResult:
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    # Deliberately NOT /releases/latest — that endpoint excludes
+    # pre-releases entirely (returns 404 if the newest release is marked
+    # as one, which an early-access build always will be), so it would
+    # report "unreachable" forever during a beta. /releases lists every
+    # release newest-first regardless of pre-release status; [0] is the
+    # equivalent of "latest" but actually finds a pre-release too.
+    url = f"https://api.github.com/repos/{repo}/releases"
     request = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json", "User-Agent": "PokerForge-UpdateChecker"})
     with urllib.request.urlopen(request, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
+        releases = json.loads(resp.read().decode('utf-8'))
+    if not releases:
+        return UpdateCheckResult(checked=False, update_available=False,
+                                  error="No GitHub releases found yet.")
+    data = releases[0]
     latest = str(data.get('tag_name') or '').lstrip('vV')
     if not latest:
         return UpdateCheckResult(checked=False, update_available=False,
