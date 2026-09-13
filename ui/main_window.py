@@ -25,6 +25,7 @@ from ui.stat_registry import STAT_REGISTRY, STAT_CATEGORIES, pop_avg
 from ui.theme import BG2, BG3, BORDER, GREEN, RED, ORANGE, DIM, TEXT, ACCENT2, lbl
 from ui.async_worker import AsyncRunner
 from ui.player_classify import classify_player, generate_leaks, MIN_LEAK_SAMPLE as SMALL_SAMPLE_THRESHOLD
+from core.villain_similarity import find_similar_villains
 from database.queries import (
     villain_stats_query, villain_graph_query, villain_group_stats_query, villain_group_graph_query,
     hands_for_stat_query, DRILLDOWN_STAT_IDS,
@@ -121,6 +122,7 @@ class VillainDetail(QWidget, AsyncRunner):
         self._init_async()
         self._name_blurred = False
         self._pop_averages = {}
+        self._all_rows = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
@@ -309,8 +311,9 @@ class VillainDetail(QWidget, AsyncRunner):
             if w:
                 w.deleteLater()
 
-    def show_villain(self, name, d_from=None, d_to=None, stake=None, pop_averages=None):
+    def show_villain(self, name, d_from=None, d_to=None, stake=None, pop_averages=None, all_rows=None):
         self._pop_averages = pop_averages or {}
+        self._all_rows = all_rows or {}
         self._current_name = name
         self._current_d_from, self._current_d_to, self._current_stake = d_from, d_to, stake
         self.run_async(
@@ -319,6 +322,16 @@ class VillainDetail(QWidget, AsyncRunner):
             lambda result: self._render_villain(name, result),
             on_error=lambda msg: self._show_error(name, msg),
         )
+
+    def _on_similar_player_clicked(self, name):
+        # Re-renders this same panel for a different villain, reusing
+        # whatever filters/population data are already loaded — clicking
+        # a similar player doesn't need to go back through the pool list
+        # at all, though the list's own row-selection state won't follow
+        # (a minor, acceptable inconsistency: the list highlight only
+        # updates the next time someone clicks a row there directly).
+        self.show_villain(name, self._current_d_from, self._current_d_to, self._current_stake,
+                           self._pop_averages, self._all_rows)
 
     def show_villain_group(self, names, label, d_from=None, d_to=None, stake=None, pop_averages=None):
         """Same as show_villain, but pooled across a GROUP of villains (e.g.
@@ -473,6 +486,29 @@ class VillainDetail(QWidget, AsyncRunner):
             rl.addWidget(lbl(advice, dim=True, size=11))
             lfl.addWidget(row_w)
         self.below.addWidget(leaks_frame)
+
+        if not is_group:
+            similar = find_similar_villains(name, self._all_rows)
+            if similar:
+                sim_frame = QFrame()
+                sim_frame.setObjectName("card")
+                sfl = QVBoxLayout(sim_frame)
+                sfl.setContentsMargins(12, 12, 12, 12)
+                sfl.setSpacing(8)
+                sfl.addWidget(lbl(f"SIMILAR PLAYERS  ·  overall stat profile closest to {name}",
+                                   size=11, dim=True))
+                for sp in similar:
+                    row_w = _ClickableFrame()
+                    row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
+                    row_w.setCursor(Qt.CursorShape.PointingHandCursor)
+                    row_w.setToolTip("Click to view this player's profile")
+                    row_w.clicked.connect(lambda n=sp.name: self._on_similar_player_clicked(n))
+                    rl = QHBoxLayout(row_w)
+                    rl.setContentsMargins(12, 8, 12, 8)
+                    rl.addWidget(lbl(sp.name, size=12), 1)
+                    rl.addWidget(lbl(f"{sp.similarity:.0f}% similar  ·  {sp.hands:,} hands", dim=True, size=11))
+                    sfl.addWidget(row_w)
+                self.below.addWidget(sim_frame)
 
         notes_frame = QFrame()
         notes_frame.setObjectName("card")

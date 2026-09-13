@@ -257,7 +257,7 @@ class PopulationTab(QWidget, AsyncRunner):
         if group_names:
             self.detail.show_villain_group(group_names, name, self._d_from, self._d_to, self._stake, self.pop_averages)
         else:
-            self.detail.show_villain(name, self._d_from, self._d_to, self._stake, self.pop_averages)
+            self.detail.show_villain(name, self._d_from, self._d_to, self._stake, self.pop_averages, self.rows)
 
     def refresh(self, d_from, d_to, stake=None):
         """Re-filter to the given period (and optional stake) and rebuild
@@ -285,6 +285,7 @@ class PopulationTab(QWidget, AsyncRunner):
                 self._selected = None
                 self._selected_is_group = False
         elif self._selected and self._selected in self.rows:
-            self.detail.show_villain(self._selected, self._d_from, self._d_to, self._stake, self.pop_averages)
+            self.detail.show_villain(self._selected, self._d_from, self._d_to, self._stake,
+                                      self.pop_averages, self.rows)
         elif self._selected:
             self._selected = None

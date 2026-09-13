@@ -331,6 +331,45 @@ def position_breakdown_query(db, player_name: str, d_from: date | None = None, d
     return result
 
 
+def population_by_position_query(db, hero: str, d_from: date | None = None, d_to: date | None = None,
+                                   stake: str | None = None):
+    """Same shape and same underlying formula as position_breakdown_query,
+    but pooled across every OTHER player instead of hero — lets a leak
+    search compare "your 3-bet% from the CO" against "the pool's 3-bet%
+    from the CO" instead of only against one flat overall population
+    number (see core/leak_finder.py, which is what actually consumes
+    this). Deliberately duplicated rather than sharing a helper with
+    position_breakdown_query — the WHERE clause differs by exactly one
+    condition (!= vs =), and that's a small enough difference that a
+    shared abstraction would obscure more than it saves."""
+    where = ["player_name != ?"]
+    params = [hero]
+    if d_from and d_to:
+        lo, hi = _date_bounds(d_from, d_to)
+        where += ["played_at >= ?", "played_at < ?"]
+        params += [lo, hi]
+    if stake:
+        where.append("stakes_label = ?")
+        params.append(stake)
+    base_where = " AND ".join(where)
+
+    raw_positions = {r[0] for r in db.conn.execute(
+        f"SELECT DISTINCT position FROM hand_player_stats WHERE {base_where} AND position IS NOT NULL",
+        params)}
+    display_positions = {'SB' if p == 'BTN/SB' else p for p in raw_positions}
+
+    result = {}
+    for pos in display_positions:
+        if pos == 'SB':
+            condition, extra_params = "position IN ('SB', 'BTN/SB')", []
+        else:
+            condition, extra_params = "position = ?", [pos]
+        values, hand_count, _, opp_counts = _villain_stats_from_where(
+            db, base_where + " AND " + condition, params + extra_params)
+        result[pos] = (values, hand_count, opp_counts)
+    return result
+
+
 def villain_group_stats_query(db, names: list[str], d_from: date | None = None, d_to: date | None = None,
                                 stake: str | None = None):
     """Same shape as villain_stats_query, but pooled across a GROUP of
@@ -562,6 +601,7 @@ STAT_COLUMN_CONDITIONS = {
     'squeeze': 'squeeze = 1',
     'raise_vs_squeeze': 'raised_vs_squeeze = 1',
     'fold_to_squeeze': 'folded_to_squeeze = 1',
+    'fold_to_steal': 'folded_to_steal = 1',
     'wtsd': 'reached_showdown = 1',
     'wwsf': 'saw_flop = 1 AND won_hand = 1',
     'wsd': 'reached_showdown = 1 AND won_hand = 1',

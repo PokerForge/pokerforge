@@ -20,8 +20,9 @@ from ui.main_window import _make_stat_card, _ClickableFrame
 from ui.player_classify import generate_hero_leaks
 from ui.hand_list_dialog import HandListDialog, HandListPanel
 from ui.csv_export import export_table_to_csv
+from core.leak_finder import find_leaks
 from database.queries import (
-    villain_stats_query, position_breakdown_query, pct_trend_query,
+    villain_stats_query, position_breakdown_query, population_by_position_query, pct_trend_query,
     hands_for_stat_query, hands_for_leak_query, hands_for_position_query, DRILLDOWN_STAT_IDS,
 )
 from config.settings import (
@@ -306,7 +307,8 @@ class StatsTab(QWidget, AsyncRunner):
         self._current_d_from, self._current_d_to, self._current_stake = d_from, d_to, stake
         self.run_async(
             lambda: (villain_stats_query(db, hero, d_from, d_to, stake),
-                      position_breakdown_query(db, hero, d_from, d_to, stake)),
+                      position_breakdown_query(db, hero, d_from, d_to, stake),
+                      population_by_position_query(db, hero, d_from, d_to, stake)),
             self._render,
         )
         self._refresh_trend()
@@ -328,6 +330,66 @@ class StatsTab(QWidget, AsyncRunner):
         rows = hands_for_leak_query(self.db, self.hero, leak_id,
                                      self._current_d_from, self._current_d_to, self._current_stake)
         HandListDialog(rows, self.db, self.hero, title, self.currency, parent=self).exec()
+
+    def _build_cross_leaks_card(self, cross_leaks):
+        """The top of ranked list is a callout for the single biggest leak
+        (deviation-from-population weighted by sample size, see
+        core/leak_finder.py); the rest render as compact rows below it."""
+        frame = QFrame()
+        frame.setObjectName("card")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+        lay.addWidget(lbl(
+            "LEAKS BY POSITION  ·  ranked by deviation × sample size  ·  click one to see example hands",
+            size=11, dim=True))
+
+        biggest = cross_leaks[0]
+        callout = _ClickableFrame()
+        callout.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;border-left:3px solid {RED};")
+        callout.setCursor(Qt.CursorShape.PointingHandCursor)
+        callout.setToolTip("Click to see example hands")
+        callout.clicked.connect(lambda l=biggest: self._on_cross_leak_clicked(l))
+        cl = QVBoxLayout(callout)
+        cl.setContentsMargins(14, 10, 14, 10)
+        cl.setSpacing(4)
+        direction = "higher" if biggest.deviation > 0 else "lower"
+        cl.addWidget(lbl(
+            f"{biggest.stat_label} from {biggest.position} — {abs(biggest.deviation):.1f} points {direction} "
+            f"than the population", bold=True, size=13))
+        cl.addWidget(lbl(
+            f"You {biggest.hero_rate:.1f}%  ·  Population {biggest.population_rate:.1f}%  ·  "
+            f"{biggest.sample:,} hands", dim=True, size=11))
+        lay.addWidget(callout)
+
+        for leak in cross_leaks[1:5]:
+            row_w = _ClickableFrame()
+            row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
+            row_w.setCursor(Qt.CursorShape.PointingHandCursor)
+            row_w.setToolTip("Click to see example hands")
+            row_w.clicked.connect(lambda l=leak: self._on_cross_leak_clicked(l))
+            rl = QHBoxLayout(row_w)
+            rl.setContentsMargins(12, 8, 12, 8)
+            rl.addWidget(lbl(f"{leak.stat_label} — {leak.position}", size=12), 1)
+            rl.addWidget(lbl(
+                f"You {leak.hero_rate:.1f}%  ·  Pop {leak.population_rate:.1f}%  ·  {leak.sample:,} hands",
+                dim=True, size=11))
+            lay.addWidget(row_w)
+
+        return frame
+
+    def _on_cross_leak_clicked(self, leak):
+        # Always the hands where the stat's own condition was made (same
+        # convention _on_stat_clicked already uses for a plain stat-card
+        # click) rather than direction-aware "opportunities you missed"
+        # framing — that finer illustrative-condition system exists for
+        # ui/player_classify.py's fixed leak set (LEAK_HAND_CONDITIONS),
+        # not attempted here across 10 stats x 2 possible directions.
+        rows = hands_for_stat_query(self.db, self.hero, leak.stat_id,
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     position=leak.position)
+        label = f"{leak.stat_label} — {leak.position}"
+        HandListDialog(rows, self.db, self.hero, label, self.currency, parent=self).exec()
 
     def _on_position_cell_double_clicked(self, row, col):
         if col >= len(self._position_col_stat_ids):
@@ -385,14 +447,18 @@ class StatsTab(QWidget, AsyncRunner):
 
     def _render(self, result):
         self._last_result = result
-        (values, hand_count, _, opp_counts), by_position = result
+        (values, hand_count, _, opp_counts), by_position, population_by_position = result
         self.hands_lbl.setText(f"{hand_count:,} hands")
 
-        self._render_overview(values, opp_counts)
+        self._render_overview(values, opp_counts, by_position, population_by_position)
         self._render_position(values, hand_count, by_position)
 
-    def _render_overview(self, values, opp_counts):
+    def _render_overview(self, values, opp_counts, by_position, population_by_position):
         self._clear(self.overview_lay)
+
+        cross_leaks = find_leaks(by_position, population_by_position)
+        if cross_leaks:
+            self.overview_lay.addWidget(self._build_cross_leaks_card(cross_leaks))
 
         leaks_frame = QFrame()
         leaks_frame.setObjectName("card")

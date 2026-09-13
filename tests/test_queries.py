@@ -13,6 +13,7 @@ from database.repository import PokerDatabase, _STATS_COLS
 from database.queries import (
     hero_overview_query, sessions_query, available_stakes_query,
     population_summary_query, hands_for_stat_query, hands_for_position_query,
+    position_breakdown_query, population_by_position_query,
 )
 
 _DEFAULTS = {c: 0 for c in _STATS_COLS}
@@ -174,3 +175,66 @@ def test_hands_for_position_query_sb_includes_heads_up_btn_sb_label(db):
 
     rows = hands_for_position_query(db, "Hero", "SB", date(2026, 6, 1), date(2026, 6, 30))
     assert {r[0] for r in rows} == {"h1", "h2"}
+
+
+def test_population_by_position_query_excludes_hero_and_pools_others(db):
+    # Hero's own BTN hand must not count toward the population average.
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BTN",
+                       vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h1", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BB",
+                       vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h2", player_name="Villain2", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BTN",
+                       vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h3", player_name="Villain3", played_at="2026-06-03T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BTN",
+                       vpip=0, vpip_pfr_opp=1)
+
+    result = population_by_position_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+
+    btn_values, btn_hands, btn_opp = result["BTN"]
+    assert btn_hands == 2  # Villain2 + Villain3 only, NOT Hero's own BTN hand
+    assert btn_values["vpip"] == 50.0  # 1 of 2 — Hero's own BTN vpip=1 hand is correctly excluded
+
+
+def test_population_by_position_query_folds_heads_up_btn_sb_into_sb(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BB")
+    _insert_stats_row(db, hand_id="h1", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="BTN/SB",
+                       vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="h2", player_name="Villain2", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="SB",
+                       vpip=0, vpip_pfr_opp=1)
+
+    result = population_by_position_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+
+    assert "BTN/SB" not in result
+    sb_values, sb_hands, sb_opp = result["SB"]
+    assert sb_hands == 2
+
+
+def test_population_by_position_matches_hero_query_shape_for_the_same_data(db):
+    """Same underlying formula as position_breakdown_query — swapping which
+    side of the WHERE clause gets the player name shouldn't change the
+    computed values for an otherwise-identical row."""
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", position="CO",
+                       three_bet=1, three_bet_opp=1)
+
+    hero_result = position_breakdown_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+    pop_result = population_by_position_query(db, "SomeoneElse", date(2026, 6, 1), date(2026, 6, 30))
+
+    assert hero_result["CO"][0]["three_bet"] == pop_result["CO"][0]["three_bet"] == 100.0
+
+
+def test_hands_for_stat_query_supports_fold_to_steal(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", folded_to_steal=1)
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", folded_to_steal=0)
+
+    rows = hands_for_stat_query(db, "Hero", "fold_to_steal", date(2026, 6, 1), date(2026, 6, 30))
+    assert {r[0] for r in rows} == {"h1"}
