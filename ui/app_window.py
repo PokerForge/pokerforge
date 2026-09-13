@@ -53,6 +53,7 @@ from ui.hero_setup_dialog import HeroSetupDialog
 from ui.profile_dialog import ProfileDialog, restart_app
 from ui.settings_dialog import SettingsDialog
 from ui.getting_started_dialog import GettingStartedDialog
+from ui.app_tour import TourOverlay
 from ui.diagnostics_dialog import DiagnosticsDialog
 from ui.whats_new_dialog import WhatsNewDialog
 from core.changelog import get_changelog_entry
@@ -159,6 +160,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         # so this row just overlays the one piece of real data it can't
         # bake in: hero + how many hands are loaded.
         header = HeaderBanner()
+        self.header = header
         header.setFixedHeight(60)
         hl = QHBoxLayout(header)
         hl.setContentsMargins(24, 0, 24, 0)
@@ -174,6 +176,7 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         # Filter bar
         fbar = QFrame()
+        self.filter_bar = fbar
         fbar.setStyleSheet(f"background:{BG};border-bottom:1px solid {BORDER};")
         fbar.setFixedHeight(52)
         fl = QHBoxLayout(fbar)
@@ -390,6 +393,13 @@ class AppWindow(QMainWindow, AsyncRunner):
     def _on_getting_started_clicked(self):
         GettingStartedDialog(parent=self).exec()
 
+    def _on_take_tour_clicked(self):
+        # Kept alive on self — a local variable would be garbage collected
+        # (and its Qt widgets destroyed under it) the moment this method
+        # returns, well before the tour itself finishes.
+        self._tour = TourOverlay(self)
+        self._tour.start()
+
     def _on_backup_clicked(self):
         default_name = f"PokerForge Backup {date.today().isoformat()}.zip"
         path, _ = QFileDialog.getSaveFileName(self, "Backup My Data", default_name, "Zip Files (*.zip)")
@@ -558,6 +568,7 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("Getting Started...", self._on_getting_started_clicked)
+        help_menu.addAction("Take the Tour...", self._on_take_tour_clicked)
         help_menu.addSeparator()
         help_menu.addAction("Report a Bug...", self._on_report_bug_clicked)
         help_menu.addAction("Check for Updates...", self._on_check_updates_clicked)
@@ -816,7 +827,6 @@ def main():
         set_hero_name(hero)
         set_currency_symbol(currency)
         logger.info("Detected hero: %s, currency: %s", hero, currency)
-        GettingStartedDialog().exec()
 
     if hands:
         normalize_hero_aliases(hands, hero)
@@ -853,6 +863,14 @@ def main():
     if icon_path.exists():
         win.setWindowIcon(QIcon(str(icon_path)))
     win.show()
+
+    if first_run:
+        # Both need a real, shown AppWindow to attach to/spotlight widgets
+        # on — GettingStartedDialog first (a static glossary reference,
+        # closed when read), then the interactive tour walks the actual UI.
+        GettingStartedDialog(parent=win).exec()
+        win._tour = TourOverlay(win)
+        win._tour.start()
 
     last_seen_version = get_last_seen_version()
     if last_seen_version != APP_VERSION:
