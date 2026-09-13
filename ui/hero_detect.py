@@ -53,7 +53,7 @@ def dominant_currency(hands: list[Hand], hero: str) -> str:
     for h in hands:
         if any(p.name == hero for p in h.players):
             counts[h.currency] += 1
-    return counts.most_common(1)[0][0] if counts else "£"
+    return counts.most_common(1)[0][0] if counts else "$"
 
 
 def normalize_hero_aliases(hands: list[Hand], primary_hero: str) -> None:

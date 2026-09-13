@@ -735,7 +735,7 @@ def main():
         # this batch actually IS the whole history, i.e. a fresh database
         # where nothing has been imported yet, so `hands` is everything.
         detected_hero = detect_hero(hands)
-        detected_currency = dominant_currency(hands, detected_hero) if hands else "£"
+        detected_currency = dominant_currency(hands, detected_hero) if hands else "$"
         if hands:
             # Let the player correct a wrong guess before it's locked in —
             # nothing else here can undo a bad auto-detection later.

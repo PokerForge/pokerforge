@@ -1,7 +1,8 @@
 """ui/hero_detect.py's hero_hand_share() — the signal behind the first-run
-"does this data actually look like yours?" sanity check."""
+"does this data actually look like yours?" sanity check — and
+dominant_currency()'s fallback when there's nothing to detect from."""
 from models.hand import Hand, Player
-from ui.hero_detect import hero_hand_share
+from ui.hero_detect import hero_hand_share, dominant_currency
 
 
 def _hand(players):
@@ -25,3 +26,21 @@ def test_hero_present_in_some_hands_is_a_fraction():
 
 def test_empty_hands_list_is_zero_share_not_a_crash():
     assert hero_hand_share([], "Hero") == 0.0
+
+
+def test_dominant_currency_picks_the_hero_own_most_common_currency():
+    hands = [
+        Hand(hand_id="1", players=[Player(name="Hero")], currency="$"),
+        Hand(hand_id="2", players=[Player(name="Hero")], currency="$"),
+        Hand(hand_id="3", players=[Player(name="Hero")], currency="€"),
+    ]
+    assert dominant_currency(hands, "Hero") == "$"
+
+
+def test_dominant_currency_falls_back_to_dollar_with_no_hero_hands():
+    # Nothing to detect from (empty list, or hero isn't seated in any of
+    # them) — defaults to $ rather than guessing a specific region's
+    # currency for a user we know nothing about yet.
+    assert dominant_currency([], "Hero") == "$"
+    hands = [Hand(hand_id="1", players=[Player(name="SomeoneElse")], currency="£")]
+    assert dominant_currency(hands, "Hero") == "$"
