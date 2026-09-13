@@ -4,6 +4,46 @@ All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 
+## [1.0.0-beta.2] — 2026-09-13
+
+PokerForge Intelligence: goes beyond raw stats to tell you what's
+actually costing you money, and what to do about it.
+
+- **Leaks by Position** (Stats > Leaks) — ranks your biggest deviations
+  from your own imported population, by position, weighted by how much
+  each one actually costs you (deviation × sample size) rather than
+  deviation alone. A category filter (Preflop Opens / 3-Bet & 4-Bet /
+  Steal Defense / Postflop / Showdown) and a per-stat cap keep one
+  dominant leak from crowding out everything else. Click any leak to
+  see the hands behind it.
+- **Study Queue** (Stats > Leaks, above the leak list) — a short,
+  prioritized "work through these" plan: up to 3 genuinely different
+  leaks, each with a "Study N Hands" button that opens the replayer
+  loaded with your own recent hands for it.
+- **Villain Exploit Notes** — now gated on sample size (no more notes
+  built from a handful of hands) and clickable straight to example
+  hands, matching the quality bar of your own leaks.
+- **Similar Players** (villain profile) — instantly see who else in
+  your pool plays like the villain you're looking at.
+- **Pool Insights** (Population tab) — population-wide patterns, like
+  river bet-sizing versus revealed hand strength, mined across your
+  whole showdown history.
+- **Tilt Report** (Sessions tab) — does your VPIP shift in the 30
+  minutes after a 30bb+ loss, compared to your own baseline?
+- **Backtest Deviations** (Stats > Trend) — for any stat you're
+  tracking, splits your own history into the periods where it ran high
+  or low versus your average, and shows what your bb/100 actually
+  looked like in each — a correlation, never claimed as causal.
+- The villain profile is now organized as Exploits / Similar Players /
+  Stats tabs instead of one long scroll, leading with the most
+  actionable view.
+- The hand replayer's Range Grid heatmap now works for "All Positions"
+  too (previously required filtering to one position first), and the
+  transport's ⏮/⏭ buttons advance to the previous/next hand once
+  they're already at the start/end of the current one.
+- Fixed a real layout bug where the pot label could overlap a seat's
+  info pill in the hand replayer.
+
 ## [1.0.0-beta.1] — 2026-09-13
 
 First early-access build. Highlights:
