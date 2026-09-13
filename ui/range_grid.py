@@ -51,9 +51,18 @@ class _CellLabel(QLabel):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, event):
-        if self._clickable and event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
+        # Same defensive guard as ui/main_window.py's _ClickableFrame — a
+        # click already queued for this cell at the moment the popup
+        # closes (e.g. the position filter changed, or the underlying
+        # hand list refreshed) can arrive after the underlying C++
+        # QLabel is gone. Drop it instead of crashing (a real production
+        # crash was seen from the same pattern elsewhere in the app).
+        try:
+            if self._clickable and event.button() == Qt.MouseButton.LeftButton:
+                self.clicked.emit()
+            super().mousePressEvent(event)
+        except RuntimeError:
+            pass
 
 
 class RangeGridWidget(QWidget):

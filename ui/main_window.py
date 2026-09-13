@@ -39,9 +39,22 @@ class _ClickableFrame(QFrame):
     clicked = pyqtSignal()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
+        # The villain panel's stat cards are destroyed and rebuilt on
+        # every refresh (see this module's docstring) — including ones
+        # the live folder watcher now triggers automatically every few
+        # seconds while playing (ui/live_watcher.py), not just the rare
+        # manual period/stake change this used to only ever race with.
+        # A click already queued for a card at the exact moment it gets
+        # torn down and replaced arrives here after the underlying C++
+        # QFrame is gone — a real crash seen in production (RuntimeError:
+        # wrapped C/C++ object ... has been deleted). The click has
+        # already lost its meaning by then; drop it instead of crashing.
+        try:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.clicked.emit()
+            super().mousePressEvent(event)
+        except RuntimeError:
+            pass
 
 
 def _make_stat_card(stat, value, live_averages=None, on_click=None, sample_n=None):
