@@ -19,9 +19,12 @@ from ui.async_worker import AsyncRunner
 from ui.main_window import _make_stat_card, _ClickableFrame
 from ui.player_classify import generate_hero_leaks
 from ui.hand_list_dialog import HandListDialog, HandListPanel
+from ui.hand_replayer import HandReplayDialog
 from ui.csv_export import export_table_to_csv
 from ui.deviation_backtest_dialog import DeviationBacktestDialog
 from core.leak_finder import find_leaks, diversify_leaks, LEAK_CATEGORIES
+from core.study_queue import build_study_queue, HANDS_PER_STUDY_SESSION
+from database.hand_loader import load_hands_bulk
 from database.queries import (
     villain_stats_query, position_breakdown_query, population_by_position_query, pct_trend_query,
     hands_for_stat_query, hands_for_leak_query, hands_for_position_query, DRILLDOWN_STAT_IDS,
@@ -333,6 +336,54 @@ class StatsTab(QWidget, AsyncRunner):
                                      self._current_d_from, self._current_d_to, self._current_stake)
         HandListDialog(rows, self.db, self.hero, title, self.currency, parent=self).exec()
 
+    def _build_study_queue_card(self, study_queue):
+        """A short, prioritized list (core.study_queue) on top of the full
+        ranked "Leaks by Position" card below — 3 genuinely different
+        leaks to work through rather than 20 numbers to read. Each
+        priority opens the replayer loaded with up to
+        HANDS_PER_STUDY_SESSION of that leak's own recent hands."""
+        frame = QFrame()
+        frame.setObjectName("card")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+        lay.addWidget(lbl(
+            "\U0001f3af YOUR STUDY QUEUE  ·  work through your biggest leaks one at a time",
+            size=11, dim=True))
+
+        for i, leak in enumerate(study_queue, 1):
+            row_w = QFrame()
+            row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
+            rl = QHBoxLayout(row_w)
+            rl.setContentsMargins(14, 10, 14, 10)
+            rl.setSpacing(10)
+            text_col = QVBoxLayout()
+            text_col.setSpacing(2)
+            text_col.addWidget(lbl(f"Priority {i}", dim=True, size=11))
+            text_col.addWidget(lbl(f"{leak.stat_label} — {leak.position}", bold=True, size=13))
+            rl.addLayout(text_col, 1)
+            n = min(leak.sample, HANDS_PER_STUDY_SESSION)
+            study_btn = QPushButton(f"Study {n} Hands")
+            study_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            study_btn.setToolTip(f"{leak.sample:,} hands behind this leak in total")
+            study_btn.clicked.connect(lambda _checked, l=leak: self._on_study_leak_clicked(l))
+            rl.addWidget(study_btn)
+            lay.addWidget(row_w)
+
+        return frame
+
+    def _on_study_leak_clicked(self, leak):
+        rows = hands_for_stat_query(self.db, self.hero, leak.stat_id,
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     position=leak.position)
+        rows = sorted(rows, key=lambda r: r[1] or "", reverse=True)[:HANDS_PER_STUDY_SESSION]
+        hand_ids = [r[0] for r in rows]
+        hands_by_id = load_hands_bulk(self.db, hand_ids)
+        hands = [hands_by_id[hid] for hid in hand_ids if hid in hands_by_id]
+        if not hands:
+            return
+        HandReplayDialog(hands[0], self.hero, parent=self, hand_list=hands, start_index=0).exec()
+
     def _build_cross_leaks_card(self, cross_leaks):
         """The top of ranked list is a callout for the single biggest leak
         (deviation-from-population weighted by sample size, see
@@ -495,6 +546,9 @@ class StatsTab(QWidget, AsyncRunner):
         self._clear(self.overview_lay)
 
         cross_leaks = find_leaks(by_position, population_by_position)
+        study_queue = build_study_queue(cross_leaks)
+        if study_queue:
+            self.overview_lay.addWidget(self._build_study_queue_card(study_queue))
         if cross_leaks:
             self.overview_lay.addWidget(self._build_cross_leaks_card(cross_leaks))
 
