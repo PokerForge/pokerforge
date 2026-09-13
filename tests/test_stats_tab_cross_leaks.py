@@ -76,8 +76,9 @@ def test_rows_below_the_callout_also_state_their_own_deviation(stats_tab):
     lower = _leak(stat_label="Third", hero_rate=4.0, population_rate=8.7)  # -4.7, lower
     card = stats_tab._build_cross_leaks_card([_leak(stat_label="Biggest"), higher, lower])
     all_text = " ".join(l.text() for l in card.findChildren(QLabel))
-    assert "19.0 pts higher" in all_text
-    assert "4.7 pts lower" in all_text
+    assert "19.0 points higher" in all_text
+    assert "4.7 points lower" in all_text
+    assert "You 74.0%" in all_text and "Population 55.0%" in all_text
 
 
 def test_only_shows_up_to_five_leaks_total(stats_tab):

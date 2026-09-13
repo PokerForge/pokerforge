@@ -369,15 +369,16 @@ class StatsTab(QWidget, AsyncRunner):
             row_w.setCursor(Qt.CursorShape.PointingHandCursor)
             row_w.setToolTip("Click to see example hands")
             row_w.clicked.connect(lambda l=leak: self._on_cross_leak_clicked(l))
-            rl = QHBoxLayout(row_w)
-            rl.setContentsMargins(12, 8, 12, 8)
+            rl = QVBoxLayout(row_w)
+            rl.setContentsMargins(14, 10, 14, 10)
+            rl.setSpacing(4)
             direction = "higher" if leak.deviation > 0 else "lower"
             rl.addWidget(lbl(
-                f"{leak.stat_label} — {leak.position}  ·  {abs(leak.deviation):.1f} pts {direction}",
-                size=12), 1)
+                f"{leak.stat_label} from {leak.position} — {abs(leak.deviation):.1f} points {direction} "
+                f"than the population", bold=True, size=12))
             rl.addWidget(lbl(
-                f"You {leak.hero_rate:.1f}%  ·  Pop {leak.population_rate:.1f}%  ·  {leak.sample:,} hands",
-                dim=True, size=11))
+                f"You {leak.hero_rate:.1f}%  ·  Population {leak.population_rate:.1f}%  ·  "
+                f"{leak.sample:,} hands", dim=True, size=11))
             lay.addWidget(row_w)
 
         return frame
