@@ -26,6 +26,18 @@ STAT_LABELS = {
     "flop_fold_cbet": "Fold to Flop C-Bet", "wtsd": "WTSD", "wsd": "W$SD",
 }
 
+# Groups LEAK_STAT_IDS into the categories a user would actually want to
+# filter by — e.g. "am I leaking on 3-bets specifically" rather than
+# whatever single stat happens to have the biggest deviation everywhere.
+# Order here is display order in the filter control.
+LEAK_CATEGORIES = {
+    "Preflop Opens": ["vpip", "pfr"],
+    "3-Bet & 4-Bet": ["three_bet", "fold_3bet", "four_bet", "fold_4bet"],
+    "Steal Defense": ["fold_to_steal"],
+    "Postflop": ["flop_fold_cbet"],
+    "Showdown": ["wtsd", "wsd"],
+}
+
 
 @dataclass
 class LeakEntry:
@@ -73,3 +85,20 @@ def find_leaks(hero_by_position: dict, population_by_position: dict,
             ))
     entries.sort(key=lambda e: e.score, reverse=True)
     return entries
+
+
+def diversify_leaks(entries: list[LeakEntry], max_per_stat: int = 2) -> list[LeakEntry]:
+    """`entries` sorted by score, e.g. find_leaks's return. Keeps only the
+    top `max_per_stat` entries for any one stat_id, so one dominant stat
+    (typically VPIP, since it deviates by position more consistently than
+    anything else) doesn't fill every slot in a short displayed list and
+    crowd out other real leaks. Preserves the incoming score order."""
+    counts: dict[str, int] = {}
+    kept = []
+    for entry in entries:
+        n = counts.get(entry.stat_id, 0)
+        if n >= max_per_stat:
+            continue
+        counts[entry.stat_id] = n + 1
+        kept.append(entry)
+    return kept

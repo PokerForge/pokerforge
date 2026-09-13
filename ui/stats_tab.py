@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame, QScrollArea, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QCheckBox, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QCheckBox, QTabWidget, QComboBox,
 )
 
 from ui.stat_registry import STAT_REGISTRY, STAT_CATEGORIES, STAT_REGISTRY_BY_ID
@@ -21,7 +21,7 @@ from ui.player_classify import generate_hero_leaks
 from ui.hand_list_dialog import HandListDialog, HandListPanel
 from ui.csv_export import export_table_to_csv
 from ui.deviation_backtest_dialog import DeviationBacktestDialog
-from core.leak_finder import find_leaks
+from core.leak_finder import find_leaks, diversify_leaks, LEAK_CATEGORIES
 from database.queries import (
     villain_stats_query, position_breakdown_query, population_by_position_query, pct_trend_query,
     hands_for_stat_query, hands_for_leak_query, hands_for_position_query, DRILLDOWN_STAT_IDS,
@@ -284,6 +284,7 @@ class StatsTab(QWidget, AsyncRunner):
         self._position_col_stat_ids: list[str | None] = []
         self._trend_stat_ids = get_trend_stat_ids() or list(TREND_DEFAULT_STAT_IDS)
         self._trend_interval_days = get_trend_interval_days()
+        self._leak_category = "All"
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
@@ -335,15 +336,37 @@ class StatsTab(QWidget, AsyncRunner):
     def _build_cross_leaks_card(self, cross_leaks):
         """The top of ranked list is a callout for the single biggest leak
         (deviation-from-population weighted by sample size, see
-        core/leak_finder.py); the rest render as compact rows below it."""
+        core/leak_finder.py); the rest render as compact rows below it.
+        A category filter narrows to one group of stats (e.g. just 3-bet
+        & 4-bet leaks) and diversify_leaks caps how many slots any one
+        stat can take in the "All" view, so one dominant stat (typically
+        VPIP) doesn't crowd out everything else."""
         frame = QFrame()
         frame.setObjectName("card")
         lay = QVBoxLayout(frame)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(8)
-        lay.addWidget(lbl(
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(lbl(
             "LEAKS BY POSITION  ·  ranked by deviation × sample size  ·  click one to see example hands",
-            size=11, dim=True))
+            size=11, dim=True), 1)
+        category_cb = QComboBox()
+        category_cb.addItems(["All"] + list(LEAK_CATEGORIES.keys()))
+        category_cb.setCurrentText(self._leak_category)
+        category_cb.currentTextChanged.connect(self._on_leak_category_changed)
+        header_row.addWidget(category_cb)
+        lay.addLayout(header_row)
+
+        if self._leak_category != "All":
+            allowed_stats = set(LEAK_CATEGORIES[self._leak_category])
+            cross_leaks = [l for l in cross_leaks if l.stat_id in allowed_stats]
+        cross_leaks = diversify_leaks(cross_leaks)
+
+        if not cross_leaks:
+            lay.addWidget(lbl(
+                "No leak found in this category with enough hands to trust yet.", dim=True))
+            return frame
 
         biggest = cross_leaks[0]
         callout = _ClickableFrame()
@@ -382,6 +405,11 @@ class StatsTab(QWidget, AsyncRunner):
             lay.addWidget(row_w)
 
         return frame
+
+    def _on_leak_category_changed(self, category):
+        self._leak_category = category
+        if self._last_result is not None:
+            self._render(self._last_result)
 
     def _on_cross_leak_clicked(self, leak):
         # Always the hands where the stat's own condition was made (same

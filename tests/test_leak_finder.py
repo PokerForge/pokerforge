@@ -3,7 +3,7 @@ leak finder. Pure function over pre-computed position-breakdown dicts
 (the exact shape database.queries.position_breakdown_query /
 population_by_position_query already return), so no database needed
 here — database/test_queries.py covers those two queries themselves."""
-from core.leak_finder import find_leaks, MIN_SAMPLE
+from core.leak_finder import find_leaks, diversify_leaks, LeakEntry, MIN_SAMPLE, LEAK_CATEGORIES
 
 
 def _pos_data(rate_by_stat, sample=50):
@@ -96,3 +96,38 @@ def test_multiple_stats_and_positions_all_get_evaluated():
     assert {(l.position, l.stat_id) for l in leaks} == {
         ("BTN", "vpip"), ("BTN", "pfr"), ("BB", "fold_to_steal"),
     }
+
+
+def _entry(stat_id, position, score):
+    return LeakEntry(position=position, stat_id=stat_id, stat_label=stat_id,
+                      hero_rate=0.0, population_rate=0.0, sample=100, score=score)
+
+
+def test_diversify_caps_entries_per_stat_id():
+    entries = [
+        _entry("vpip", "SB", 100), _entry("vpip", "BB", 90), _entry("vpip", "BTN", 80),
+        _entry("three_bet", "CO", 70),
+    ]
+    diversified = diversify_leaks(entries, max_per_stat=2)
+    assert [(e.stat_id, e.position) for e in diversified] == [
+        ("vpip", "SB"), ("vpip", "BB"), ("three_bet", "CO"),
+    ]
+
+
+def test_diversify_keeps_the_highest_scoring_entries_for_a_capped_stat():
+    # Already sorted by score descending, as find_leaks would produce.
+    entries = [_entry("vpip", "SB", 100), _entry("vpip", "BB", 90), _entry("vpip", "UTG", 50)]
+    diversified = diversify_leaks(entries, max_per_stat=2)
+    assert [e.position for e in diversified] == ["SB", "BB"]
+
+
+def test_diversify_with_no_entries_over_the_cap_returns_everything():
+    entries = [_entry("vpip", "SB", 100), _entry("three_bet", "BB", 90)]
+    assert diversify_leaks(entries, max_per_stat=2) == entries
+
+
+def test_leak_categories_cover_every_stat_with_no_overlap():
+    from core.leak_finder import LEAK_STAT_IDS
+    all_categorized = [stat_id for stats in LEAK_CATEGORIES.values() for stat_id in stats]
+    assert sorted(all_categorized) == sorted(LEAK_STAT_IDS)
+    assert len(all_categorized) == len(set(all_categorized))
