@@ -193,3 +193,89 @@ def test_take_the_tour_menu_action_starts_a_tour(win):
     win._on_take_tour_clicked()
     assert win._tour is not None
     assert win._tour.isHidden() is False
+
+
+def _step_index(title_substring):
+    return next(i for i, s in enumerate(TOUR_STEPS) if title_substring in s.title)
+
+
+def test_using_examples_is_true_when_the_real_database_is_empty(win):
+    tour = TourOverlay(win)
+    tour.start()
+    assert tour._using_examples is True
+
+
+def test_using_examples_is_false_when_the_real_database_has_hands(win):
+    from models.hand import Hand, Player, Action
+    hand = Hand(
+        hand_id="1", players=[Player("Hero", 1, 100.0), Player("V", 2, 100.0)],
+        button_seat=1, actions=[Action("PREFLOP", "Hero", "Fold", None)],
+        winnings={}, board=[], small_blind=0.5, big_blind=1.0,
+    )
+    win.db.import_hands([hand], ev_iterations=1)
+
+    tour = TourOverlay(win)
+    tour.start()
+    assert tour._using_examples is False
+
+
+def test_welcome_step_does_not_show_the_example_banner(win):
+    tour = TourOverlay(win)
+    tour.start()
+    assert tour._index == 0
+    assert tour.example_banner.isHidden() is True
+    assert tour._example_db is None  # never built — nothing needed it yet
+
+
+def test_overview_step_shows_the_banner_and_populates_real_looking_data(win):
+    tour = TourOverlay(win)
+    tour.start()
+    for _ in range(_step_index("Overview")):
+        tour._next()
+
+    assert tour.example_banner.isHidden() is False
+    assert tour._example_db is not None
+    assert win.tab_overview.cards["hands"].text() != "—"
+    assert int(win.tab_overview.cards["hands"].text().replace(",", "")) > 0
+
+
+def test_villain_detail_step_uses_a_real_generated_example_name(win):
+    from core.demo_data import _VILLAIN_NAMES
+    tour = TourOverlay(win)
+    tour.start()
+    for _ in range(_step_index("profile for any villain")):
+        tour._next()
+
+    assert tour.example_banner.isHidden() is False
+    name_shown = win.tab_population.detail.name_lbl.text()
+    assert name_shown in _VILLAIN_NAMES
+    from PyQt6.QtWidgets import QLabel
+    all_text = " ".join(l.text() for l in win.tab_population.detail.findChildren(QLabel))
+    assert "EXPLOIT NOTES" in all_text
+
+
+def test_finish_restores_the_real_empty_state_and_closes_the_example_db(win):
+    tour = TourOverlay(win)
+    tour.start()
+    for _ in range(_step_index("Overview")):
+        tour._next()
+    assert tour._example_db is not None
+
+    finished = []
+    tour.on_finished = lambda: finished.append(True)
+    tour.finish()
+
+    assert finished == [True]
+    assert tour._example_db is None
+    # _restore_real_data re-ran the real (still empty) query — "0", the
+    # genuine real hand count, not the example database's populated one.
+    assert win.tab_overview.cards["hands"].text() == "0"
+    assert win.tab_population.db is win.db
+    assert win.tab_population.hero == win.hero
+
+
+def test_skip_right_after_welcome_never_builds_the_example_db(win):
+    tour = TourOverlay(win)
+    tour.start()
+    tour.finish()
+    assert tour._example_db is None
