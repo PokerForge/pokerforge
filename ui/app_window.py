@@ -668,28 +668,31 @@ def _open_bug_report_email(extra_body: str = ""):
     QDesktopServices.openUrl(QUrl(f"mailto:{to}?subject={subject}&body={body}"))
 
 
-def _prompt_no_hands_found_at_first_run(dirs, errors=None):
-    """Shown when the first-run wizard's chosen folder(s) yield zero
-    hands, instead of silently locking in a meaningless "Hero" name/£
-    currency placeholder with no explanation. Offers to fix the folder
-    selection immediately rather than requiring a trip through Settings
-    later — a scan with the corrected folders happens on next launch,
-    not inline here, to avoid duplicating the scan/import/progress-
-    dialog machinery a second time in the same run.
+def _prompt_first_run_scan_issues(dirs, hands, errors):
+    """Called once, right after the first-run scan, before hero
+    detection — covers every outcome of that scan:
 
-    `errors`: the (path, message) list parse_directory_incremental
-    returns — real files that PokerForge tried and failed to read are a
-    completely different situation from an empty folder (something is
-    actually broken, not "haven't played yet"), so they get their own
-    warning with a direct path to reporting it, instead of the
-    reassuring default message."""
+    - Real parse errors (`errors` non-empty) get a Warning-level message
+      with a "Report a Bug..." button, REGARDLESS of whether other files
+      parsed fine — a partial failure is just as real a bug as a total
+      one, and silently importing what did work while saying nothing
+      about what didn't would hide it just as effectively as the old
+      "zero hands = nothing to worry about" message this replaces.
+    - No errors and no hands found gets the reassuring "haven't played
+      yet" message, with a "Manage Folders..." button to fix the
+      selection immediately (saved for next launch, not re-scanned
+      inline here, to avoid duplicating the scan/import/progress-dialog
+      machinery a second time in the same run).
+    - Hands found and no errors — the normal case — shows nothing."""
     if errors:
         first_path, first_message = errors[0]
+        success_note = (f" It did successfully import {len(hands):,} hand(s) from your "
+                         "other files." if hands else "")
         msg = QMessageBox(
             QMessageBox.Icon.Warning, "Couldn't read some hand-history files",
             f"PokerForge found {len(errors)} file(s) in your folder(s) but couldn't "
             f"read {'it' if len(errors) == 1 else 'any of them'} — this usually means "
-            "the file format isn't fully supported yet.\n\n"
+            f"the file format isn't fully supported yet.{success_note}\n\n"
             f"First error:\n{first_path}\n{first_message}\n\n"
             "Reporting this would help get it fixed.")
         report_btn = msg.addButton("Report a Bug...", QMessageBox.ButtonRole.ActionRole)
@@ -698,6 +701,9 @@ def _prompt_no_hands_found_at_first_run(dirs, errors=None):
         if msg.clickedButton() is report_btn:
             error_list = "\n".join(f"{p}: {m}" for p, m in errors[:10])
             _open_bug_report_email(f"Files that failed to parse ({len(errors)} total):\n{error_list}")
+        return
+
+    if hands:
         return
 
     msg = QMessageBox(
@@ -787,6 +793,7 @@ def main():
     currency = get_currency_symbol()
     first_run = hero is None
     if first_run:
+        _prompt_first_run_scan_issues(dirs, hands, errors)
         # Hero identity is a global property of the whole history (whoever
         # appears in the most hands) — only trustworthy to detect when
         # this batch actually IS the whole history, i.e. a fresh database
@@ -802,12 +809,10 @@ def main():
             hero = confirm.selected_hero() or detected_hero
             currency = confirm.selected_currency() or detected_currency
         else:
-            # Nothing to detect from yet — rather than silently locking in
-            # a meaningless "Hero" placeholder with no explanation (which
-            # would then match nothing once real hands DO show up), say so
-            # plainly and offer to fix the folder selection right now.
+            # Nothing to detect from yet — a meaningless "Hero" placeholder,
+            # already explained (or not, if genuinely nothing was wrong) by
+            # _prompt_first_run_scan_issues above.
             hero, currency = detected_hero, detected_currency
-            _prompt_no_hands_found_at_first_run(dirs, errors)
         set_hero_name(hero)
         set_currency_symbol(currency)
         logger.info("Detected hero: %s, currency: %s", hero, currency)
