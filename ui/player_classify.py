@@ -18,68 +18,112 @@ def classify_player(vpip, pfr, threebet, wtsd):
     return "Reg \U0001f0cf", ACCENT2
 
 
-def generate_leaks(values: dict):
+MIN_LEAK_SAMPLE = 20
+
+
+def generate_leaks(values: dict, opp_counts: dict | None = None) -> list[tuple[str, str, str, str | None]]:
     """`values` uses our own stat ids (see ui/stat_registry.py), e.g.
-    'three_bet' not legacy's 'threebet', 'flop_fold_cbet' not 'fold_fcbet'."""
+    'three_bet' not legacy's 'threebet', 'flop_fold_cbet' not 'fold_fcbet'.
+
+    `opp_counts` gates each note behind MIN_LEAK_SAMPLE opportunities —
+    same reasoning as generate_hero_leaks below: an "exploit" asserted
+    from a handful of hands is noise, not a finding, and this app has
+    otherwise been careful not to claim more than the sample supports.
+    Omitting opp_counts entirely (the default) skips gating, for the one
+    caller that doesn't have it computed.
+
+    Each entry's 4th element is a leak_id into database.queries.
+    LEAK_HAND_CONDITIONS, the same lookup generate_hero_leaks's entries
+    use — the underlying hand conditions ("this player VPIP'd", "folded
+    to a 3-bet") don't depend on which player they're being read for."""
+    opp_counts = opp_counts or {}
     leaks = []
     if not values:
         return leaks
 
-    vpip = values.get('vpip', 0) or 0
-    pfr = values.get('pfr', 0) or 0
-    tb = values.get('three_bet', 0) or 0
-    f3 = values.get('fold_3bet', 0) or 0
-    fb = values.get('four_bet', 0) or 0
-    f4 = values.get('fold_4bet', 0) or 0
-    wtsd = values.get('wtsd', 0) or 0
-    wsd = values.get('wsd', 0) or 0
-    fcbet = values.get('flop_fold_cbet', 0) or 0
+    def enough(stat_id):
+        return opp_counts.get(stat_id, MIN_LEAK_SAMPLE) >= MIN_LEAK_SAMPLE
 
-    if tb < 4:
-        leaks.append(("\U0001f534", "Extremely low 3-Bet", "Their 3-bets are always premium hands. Fold everything but AA/KK/AK vs their 3-bets."))
-    elif tb < 7:
-        leaks.append(("\U0001f7e0", "Low 3-Bet", "Steal aggressively — they rarely push back preflop."))
-    if f3 > 70:
-        leaks.append(("\U0001f534", "Over-folds to 3-Bets", "3-Bet them relentlessly from any position. They give up too easily."))
-    elif f3 > 60:
-        leaks.append(("\U0001f7e0", "Folds too much to 3-Bets", "Increase 3-bet frequency — they're not defending enough."))
-    if f3 < 40 and f3:
-        leaks.append(("\U0001f535", "Defends vs 3-Bets well", "Tighten your 3-bet range — only 3-bet for value vs this player."))
+    vpip = values.get('vpip')
+    pfr = values.get('pfr')
+    tb = values.get('three_bet')
+    f3 = values.get('fold_3bet')
+    fb = values.get('four_bet')
+    f4 = values.get('fold_4bet')
+    wtsd = values.get('wtsd')
+    wsd = values.get('wsd')
+    fcbet = values.get('flop_fold_cbet')
 
-    if fb > 12:
-        leaks.append(("\U0001f534", "Over-4-Bets", "They're bluffing 4-bets — call wider or 5-bet shove with your bluff catchers."))
-    if f4 > 65:
-        leaks.append(("\U0001f534", "Folds to 4-Bets", "4-Bet bluff them frequently — they can't handle the pressure."))
+    if tb is not None and enough('three_bet'):
+        if tb < 4:
+            leaks.append(("\U0001f534", "Extremely low 3-Bet",
+                           "Their 3-bets are always premium hands. Fold everything but AA/KK/AK vs their 3-bets.",
+                           "three_bet_low"))
+        elif tb < 7:
+            leaks.append(("\U0001f7e0", "Low 3-Bet",
+                           "Steal aggressively — they rarely push back preflop.", "three_bet_low"))
 
-    if fcbet > 60:
-        leaks.append(("\U0001f534", "Folds to Cbets", "Cbet wide vs this player — they give up too often on the flop."))
-    elif fcbet > 50:
-        leaks.append(("\U0001f7e0", "Above average fold to Cbet", "Slightly increase c-bet frequency vs this player."))
-    if fcbet and fcbet < 35:
-        leaks.append(("\U0001f535", "Calls Cbets wide", "Only c-bet for value — they float too much. Check back marginal hands."))
+    if f3 is not None and enough('fold_3bet'):
+        if f3 > 70:
+            leaks.append(("\U0001f534", "Over-folds to 3-Bets",
+                           "3-Bet them relentlessly from any position. They give up too easily.", "fold_3bet_high"))
+        elif f3 > 60:
+            leaks.append(("\U0001f7e0", "Folds too much to 3-Bets",
+                           "Increase 3-bet frequency — they're not defending enough.", "fold_3bet_high"))
+        elif f3 < 40:
+            leaks.append(("\U0001f535", "Defends vs 3-Bets well",
+                           "Tighten your 3-bet range — only 3-bet for value vs this player.", "fold_3bet_good"))
 
-    if wtsd > 36:
-        leaks.append(("\U0001f534", "Goes to showdown too often", "Value bet relentlessly — they can't fold. Never bluff this player."))
-    elif wtsd > 30:
-        leaks.append(("\U0001f7e0", "Slightly high WTSD", "Lean towards value bets. Bluffs are less profitable vs this player."))
-    if wtsd < 22 and wtsd:
-        leaks.append(("\U0001f534", "Over-folds on later streets", "Bluff rivers and turns — they give up too easily postflop."))
+    if fb is not None and enough('four_bet') and fb > 12:
+        leaks.append(("\U0001f534", "Over-4-Bets",
+                       "They're bluffing 4-bets — call wider or 5-bet shove with your bluff catchers.",
+                       "four_bet_high"))
 
-    if wsd < 45 and wsd:
-        leaks.append(("\U0001f534", "Loses at showdown", "They go to showdown with weak hands — bluff catch and thin value bet."))
+    if f4 is not None and enough('fold_4bet') and f4 > 65:
+        leaks.append(("\U0001f534", "Folds to 4-Bets",
+                       "4-Bet bluff them frequently — they can't handle the pressure.", "fold_4bet_high"))
 
-    if vpip > 40:
-        leaks.append(("\U0001f534", "Extremely loose preflop", "They play too many hands — their range is weak. Value bet thinly."))
-    elif vpip > 30:
-        leaks.append(("\U0001f7e0", "Loose preflop", "Their range is wider than average — exploit with strong hands."))
+    if fcbet is not None and enough('flop_fold_cbet'):
+        if fcbet > 60:
+            leaks.append(("\U0001f534", "Folds to Cbets",
+                           "Cbet wide vs this player — they give up too often on the flop.", "fold_cbet_high"))
+        elif fcbet > 50:
+            leaks.append(("\U0001f7e0", "Above average fold to Cbet",
+                           "Slightly increase c-bet frequency vs this player.", "fold_cbet_high"))
+        elif fcbet < 35:
+            leaks.append(("\U0001f535", "Calls Cbets wide",
+                           "Only c-bet for value — they float too much. Check back marginal hands.",
+                           "fold_cbet_low"))
+
+    if wtsd is not None and enough('wtsd'):
+        if wtsd > 36:
+            leaks.append(("\U0001f534", "Goes to showdown too often",
+                           "Value bet relentlessly — they can't fold. Never bluff this player.", "wtsd_high"))
+        elif wtsd > 30:
+            leaks.append(("\U0001f7e0", "Slightly high WTSD",
+                           "Lean towards value bets. Bluffs are less profitable vs this player.", "wtsd_high"))
+        elif wtsd < 22:
+            leaks.append(("\U0001f534", "Over-folds on later streets",
+                           "Bluff rivers and turns — they give up too easily postflop.", "wtsd_low"))
+
+    if wsd is not None and enough('wsd') and wsd < 45:
+        leaks.append(("\U0001f534", "Loses at showdown",
+                       "They go to showdown with weak hands — bluff catch and thin value bet.", "wsd_low"))
+
+    if vpip is not None and enough('vpip'):
+        if vpip > 40:
+            leaks.append(("\U0001f534", "Extremely loose preflop",
+                           "They play too many hands — their range is weak. Value bet thinly.", "vpip_loose"))
+        elif vpip > 30:
+            leaks.append(("\U0001f7e0", "Loose preflop",
+                           "Their range is wider than average — exploit with strong hands.", "vpip_loose"))
 
     if not leaks:
-        leaks.append(("\U0001f7e2", "No major leaks detected", "This appears to be a solid player. Play closer to GTO vs them."))
+        leaks.append(("\U0001f7e2", "No major leaks detected",
+                       "This appears to be a solid player on the current sample. Play closer to GTO vs them.",
+                       None))
 
     return leaks
-
-
-MIN_LEAK_SAMPLE = 20
 
 
 def generate_hero_leaks(values: dict, opp_counts: dict | None = None) -> list[tuple[str, str, str, str | None]]:

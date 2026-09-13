@@ -28,7 +28,7 @@ from ui.player_classify import classify_player, generate_leaks, MIN_LEAK_SAMPLE 
 from core.villain_similarity import find_similar_villains
 from database.queries import (
     villain_stats_query, villain_graph_query, villain_group_stats_query, villain_group_graph_query,
-    hands_for_stat_query, DRILLDOWN_STAT_IDS,
+    hands_for_stat_query, hands_for_leak_query, DRILLDOWN_STAT_IDS,
 )
 from ui.hand_list_dialog import HandListDialog
 from ui.graph_overlay import HoverCrosshair
@@ -304,6 +304,11 @@ class VillainDetail(QWidget, AsyncRunner):
                                      self._current_d_from, self._current_d_to, self._current_stake)
         HandListDialog(rows, self.db, self._current_name, stat['label'], self.currency, parent=self).exec()
 
+    def _on_exploit_leak_clicked(self, leak_id, title):
+        rows = hands_for_leak_query(self.db, self._current_name, leak_id,
+                                     self._current_d_from, self._current_d_to, self._current_stake)
+        HandListDialog(rows, self.db, self._current_name, title, self.currency, parent=self).exec()
+
     def _clear_below(self):
         while self.below.count():
             item = self.below.takeAt(0)
@@ -475,10 +480,17 @@ class VillainDetail(QWidget, AsyncRunner):
         lfl = QVBoxLayout(leaks_frame)
         lfl.setContentsMargins(12, 12, 12, 12)
         lfl.setSpacing(8)
-        lfl.addWidget(lbl("EXPLOIT NOTES", size=11, dim=True))
-        for icon, title, advice in generate_leaks(values):
-            row_w = QFrame()
+        lfl.addWidget(lbl(
+            "EXPLOIT NOTES" if is_group else "EXPLOIT NOTES  ·  click one to see example hands",
+            size=11, dim=True))
+        for icon, title, advice, leak_id in generate_leaks(values, opp_counts):
+            drillable = leak_id is not None and not is_group
+            row_w = _ClickableFrame() if drillable else QFrame()
             row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
+            if drillable:
+                row_w.setCursor(Qt.CursorShape.PointingHandCursor)
+                row_w.setToolTip("Click to see example hands")
+                row_w.clicked.connect(lambda lid=leak_id, t=title: self._on_exploit_leak_clicked(lid, t))
             rl = QVBoxLayout(row_w)
             rl.setContentsMargins(12, 8, 12, 8)
             rl.setSpacing(2)
