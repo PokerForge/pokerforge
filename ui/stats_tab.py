@@ -20,6 +20,7 @@ from ui.main_window import _make_stat_card, _ClickableFrame
 from ui.player_classify import generate_hero_leaks
 from ui.hand_list_dialog import HandListDialog, HandListPanel
 from ui.csv_export import export_table_to_csv
+from ui.deviation_backtest_dialog import DeviationBacktestDialog
 from core.leak_finder import find_leaks
 from database.queries import (
     villain_stats_query, position_breakdown_query, population_by_position_query, pct_trend_query,
@@ -438,6 +439,11 @@ class StatsTab(QWidget, AsyncRunner):
             set_trend_interval_days(self._trend_interval_days)
             self._refresh_trend()
 
+    def _on_backtest_deviations_clicked(self):
+        DeviationBacktestDialog(
+            self.db, self.hero, self._current_d_from, self._current_d_to,
+            self._trend_stat_ids, self._trend_interval_days, self._current_stake, parent=self).exec()
+
     def _clear(self, layout):
         while layout.count():
             item = layout.takeAt(0)
@@ -680,6 +686,11 @@ class StatsTab(QWidget, AsyncRunner):
         self.trend_info_lbl = lbl("", dim=True)
         header_row.addWidget(self.trend_info_lbl)
         header_row.addStretch()
+        backtest_btn = QPushButton("Backtest Deviations")
+        backtest_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        backtest_btn.setToolTip("What did your results look like during your own high/low periods for these stats?")
+        backtest_btn.clicked.connect(self._on_backtest_deviations_clicked)
+        header_row.addWidget(backtest_btn)
         customise_btn = QPushButton("Customise")
         customise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         customise_btn.clicked.connect(self._on_trend_customise_clicked)
