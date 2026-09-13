@@ -256,6 +256,12 @@ class HandListPanel(QWidget):
         self.position_filter.addItem(ALL_POSITIONS_LABEL)
         self.position_filter.addItems(distinct)
         self.position_filter.blockSignals(False)
+        if len(distinct) == 1:
+            # Every row here is already one position (e.g. a leak drilldown
+            # scoped server-side) — select it so the Range Grid button is
+            # visible immediately, instead of making the user pick the one
+            # option that was already true of every row shown.
+            self.position_filter.setCurrentText(distinct[0])
 
     def _on_position_filter_changed(self, selected: str):
         self._close_range_popup()

@@ -51,6 +51,25 @@ def panel(qapp, monkeypatch, three_hands):
     return mod.HandListPanel(rows, db=None, subject_name="Hero", stat_label="3-Bet")
 
 
+@pytest.fixture()
+def single_position_panel(qapp, monkeypatch, three_hands):
+    import ui.hand_list_dialog as mod
+    # Only the two BTN hands — as if scoped server-side to one position
+    # already, the way a leak drilldown's hands_for_stat_query(position=...) is.
+    btn_only = {"h1": three_hands["h1"], "h2": three_hands["h2"]}
+    monkeypatch.setattr(mod, "load_hands_bulk", lambda db, ids: btn_only)
+    rows = [
+        ("h1", "2026-01-01T00:00:00", "£0.05/£0.10", 5.0, None),
+        ("h2", "2026-01-01T00:05:00", "£0.05/£0.10", -2.0, None),
+    ]
+    return mod.HandListPanel(rows, db=None, subject_name="Hero", stat_label="3-Bet")
+
+
+def test_a_single_position_across_every_row_is_auto_selected(single_position_panel):
+    assert single_position_panel.position_filter.currentText() == "BTN"
+    assert single_position_panel.range_btn.isHidden() is False
+
+
 def test_position_filter_has_all_positions_plus_distinct_positions_found(panel):
     items = [panel.position_filter.itemText(i) for i in range(panel.position_filter.count())]
     assert items[0] == "All Positions"
