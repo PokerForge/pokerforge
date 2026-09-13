@@ -21,12 +21,14 @@ class _FakeMessageBox:
 
     class Icon:
         Information = 1
+        Warning = 2
 
     class ButtonRole:
         ActionRole = 1
         AcceptRole = 2
 
     def __init__(self, icon, title, text):
+        self.icon = icon
         self.title = title
         self.text = text
         self.buttons = []
@@ -116,3 +118,60 @@ def test_cancelling_the_folder_dialog_does_not_save(monkeypatch):
 
     assert saved == []
     assert _FakeMessageBox.info_calls == []
+
+
+def test_parse_errors_show_a_warning_not_the_reassuring_message(monkeypatch):
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 1  # "OK"
+
+    # _FakeMessageBox itself doesn't keep a reference to the instance the
+    # function under test creates, so subclass it purely to record that
+    # instance for inspection afterward.
+    class _RecordingBox(_FakeMessageBox):
+        def __init__(self, icon, title, text):
+            super().__init__(icon, title, text)
+            _FakeMessageBox.last = self
+
+    monkeypatch.setattr(mod, "QMessageBox", _RecordingBox)
+
+    errors = [("C:\\hands\\bad1.xml", "unexpected end of file"), ("C:\\hands\\bad2.xml", "bad encoding")]
+    mod._prompt_no_hands_found_at_first_run(["C:\\hands"], errors)
+
+    box = _FakeMessageBox.last
+    assert box.icon == _FakeMessageBox.Icon.Warning
+    assert "2 file" in box.text
+    assert "bad1.xml" in box.text
+    assert "unexpected end of file" in box.text
+    assert "haven't played" not in box.text
+
+
+def test_clicking_report_a_bug_opens_the_email_with_error_details(monkeypatch):
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 0  # "Report a Bug..."
+    emailed = []
+    monkeypatch.setattr(mod, "_open_bug_report_email", lambda extra_body="": emailed.append(extra_body))
+
+    errors = [("C:\\hands\\bad1.xml", "unexpected end of file")]
+    mod._prompt_no_hands_found_at_first_run(["C:\\hands"], errors)
+
+    assert len(emailed) == 1
+    assert "bad1.xml" in emailed[0]
+    assert "unexpected end of file" in emailed[0]
+
+
+def test_no_errors_still_shows_the_reassuring_message(monkeypatch):
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 1  # "OK"
+
+    class _RecordingBox(_FakeMessageBox):
+        def __init__(self, icon, title, text):
+            super().__init__(icon, title, text)
+            _FakeMessageBox.last = self
+
+    monkeypatch.setattr(mod, "QMessageBox", _RecordingBox)
+
+    mod._prompt_no_hands_found_at_first_run(["C:\\hands"], [])
+
+    box = _FakeMessageBox.last
+    assert box.icon == _FakeMessageBox.Icon.Information
+    assert "haven't played" in box.text
