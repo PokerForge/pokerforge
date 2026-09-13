@@ -533,7 +533,11 @@ class TableWidget(QWidget):
         self.pot_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pot_lbl.setStyleSheet(f"background:transparent;border:none;color:{GREEN};"
                                     f"font-size:14px;font-weight:700;")
-        self.pot_lbl.setFixedWidth(200)
+        # setFixedWidth alone leaves the height at Qt's default (unsized,
+        # never-shown) 480px, so the AlignCenter text painted far below
+        # where move() below puts the label's top-left corner — overlapping
+        # whichever seat's pill happens to sit near the table's center.
+        self.pot_lbl.setFixedSize(200, 24)
 
         self.board = _CardRow()
         self.board.setParent(self)

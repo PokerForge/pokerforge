@@ -24,6 +24,16 @@ def _hand(hand_id):
     )
 
 
+def test_pot_label_has_a_sane_fixed_height(qapp):
+    # QLabel.setFixedWidth alone leaves height at Qt's default (never
+    # explicitly sized) 480px, which made the AlignCenter pot text paint
+    # far below its intended position, overlapping the nearest seat's
+    # pill — found while generating real screenshots for the landing page.
+    dlg = HandReplayDialog(_hand("h1"), "Hero")
+    assert dlg.table.pot_lbl.height() < 40
+    dlg.timer.stop()
+
+
 def test_single_hand_call_has_no_navigation_row(qapp):
     dlg = HandReplayDialog(_hand("h1"), "Hero")
     assert dlg.hand_nav_label is None
