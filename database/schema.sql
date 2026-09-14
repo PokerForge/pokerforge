@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS hands (
     rake REAL,
     board TEXT,
     raw_text TEXT,
-    imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+    imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    session_type TEXT NOT NULL DEFAULT 'cash',  -- 'cash' or 'tournament' (see hand_player_stats below)
+    tournament_id TEXT,   -- NULL for cash; the site's own tournament number
+    buy_in REAL,          -- real money, paid once -- NULL for cash
+    fee REAL              -- the site's rake on the buy-in -- NULL for cash
 );
 
 CREATE TABLE IF NOT EXISTS hand_players (
@@ -59,6 +63,10 @@ CREATE TABLE IF NOT EXISTS hand_player_stats (
     ev REAL,             -- NULL unless this was a computable all-in spot
     position TEXT,
     stakes_label TEXT,   -- native-currency label, e.g. "£0.02/£0.04" — denormalized from hands so stake filtering needs no join
+    source TEXT,         -- e.g. "ipoker", "ggpoker", "pokerstars" — denormalized from hands so site filtering needs no join, same reasoning as stakes_label
+    session_type TEXT NOT NULL DEFAULT 'cash',  -- denormalized from hands, same reasoning
+    tournament_id TEXT,  -- denormalized from hands — lets "all hands in tournament X" be indexed without a join
+    rake REAL,           -- denormalized from hands, same reasoning — powers the Rakeback stat card
 
     -- Preflop (core.stats.PlayerHandFlags)
     -- vpip_pfr_opp: 0 only for a BB who "walked" (won uncontested with zero
@@ -69,11 +77,18 @@ CREATE TABLE IF NOT EXISTS hand_player_stats (
     vpip INTEGER, pfr INTEGER,
     three_bet_opp INTEGER, three_bet INTEGER,
     faced_3bet_opp INTEGER, folded_to_3bet INTEGER,
+    -- Narrower than the pair above: restricted to the player's OWN open
+    -- getting re-raised, rather than any live 3-bet they happen to face
+    -- (e.g. a blind cold-folding to someone else's open+3bet). This is
+    -- the population behind the "Over-folds to 3-Bets" exploit/leak's
+    -- hand list — see LEAK_HAND_CONDITIONS in database/queries.py.
+    faced_3bet_as_raiser_opp INTEGER, folded_to_3bet_as_raiser INTEGER,
     four_bet_opp INTEGER, four_bet INTEGER,
     faced_4bet_opp INTEGER, folded_to_4bet INTEGER,
     squeeze_opp INTEGER, squeeze INTEGER,
     squeeze_def_opp INTEGER, raised_vs_squeeze INTEGER, folded_to_squeeze INTEGER,
     folded_vs_open INTEGER,
+    limp_opp INTEGER, limp INTEGER, limp_call_opp INTEGER, limp_call INTEGER,
 
     -- Showdown (core.stats.ShowdownFlags)
     saw_flop INTEGER, reached_showdown INTEGER, won_hand INTEGER,
@@ -148,4 +163,31 @@ CREATE TABLE IF NOT EXISTS imported_files (
     mtime REAL NOT NULL,
     size INTEGER NOT NULL,
     imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- One row per "mark as studied" click on a Study Queue priority — a
+-- habit-tracking log, not a correctness record: marking something
+-- studied doesn't change the underlying stat (see core/study_queue.py),
+-- it's just what powers the "studied recently" checkmark and the streak
+-- count shown on the card.
+CREATE TABLE IF NOT EXISTS study_completions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stat_id TEXT NOT NULL,
+    position TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_study_completions_completed_at ON study_completions(completed_at);
+
+-- Manually entered tournament results -- no hand-history export (in any
+-- supported format) ever contains a finish position or payout, only the
+-- hand-by-hand action log, so real ROI/ITM% needs the player to log this
+-- themselves after the fact. Buy-in/fee are NOT duplicated here -- they're
+-- already on hands/hand_player_stats, parsed from the hands themselves.
+CREATE TABLE IF NOT EXISTS tournament_results (
+    tournament_id TEXT PRIMARY KEY,
+    finish_position INTEGER,
+    field_size INTEGER,
+    payout REAL,
+    currency TEXT,
+    logged_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

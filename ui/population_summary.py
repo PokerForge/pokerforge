@@ -16,7 +16,8 @@ decimals.
 from dataclasses import dataclass
 from models.hand import Hand
 from core.stats import analyze_preflop, analyze_showdown, compute_invested
-from ui.hero_detect import ANON_PLACEHOLDER
+from core.ggpoker_hand_parser import GGPOKER_HERO_LABEL
+from ui.hero_detect import is_anon_placeholder
 
 
 @dataclass
@@ -66,7 +67,14 @@ def build_population_summary(hands: list[Hand], hero: str) -> dict[str, Populati
         invested = compute_invested(hand)
 
         for p in hand.players:
-            if p.name == hero or ANON_PLACEHOLDER.match(p.name):
+            if p.name == hero or is_anon_placeholder(p.name):
+                continue
+            # GGPoker and Winning Network both anonymize every seat except
+            # the exporting account's own (always literally "Hero") --
+            # never a real, trackable villain. Scoped by source, not name
+            # shape (see ui/hero_detect.py's ANON_PLACEHOLDER docstring for
+            # why).
+            if hand.source in ('ggpoker', 'winning_network') and p.name != GGPOKER_HERO_LABEL:
                 continue
             row = rows.setdefault(p.name, PopulationRow(p.name))
             row.hands += 1

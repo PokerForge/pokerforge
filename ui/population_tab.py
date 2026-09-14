@@ -18,7 +18,7 @@ from ui.theme import ACCENT2, BG3, GREEN, RED, lbl
 from ui.async_worker import AsyncRunner
 from ui.csv_export import export_table_to_csv
 from ui.pool_insights_dialog import PoolInsightsDialog
-from database.queries import population_summary_query
+from database.queries import population_summary_query, hero_hand_sources_query
 
 MIN_HAND_OPTIONS = [("Min 1 hand", 1), ("Min 10 hands", 10), ("Min 50 hands", 50),
                     ("Min 100 hands", 100), ("Min 200 hands", 200)]
@@ -61,7 +61,8 @@ class PopulationTab(QWidget, AsyncRunner):
         self.hero = hero
         self.db = db
         self.currency = currency
-        self._d_from = self._d_to = self._stake = None
+        self._d_from = self._d_to = self._stake = self._site = None
+        self._session_type = None
         # Populated by the first refresh() call, which AppWindow makes
         # immediately after construction — no point computing this twice
         # (once here unfiltered, once again filtered a moment later).
@@ -113,6 +114,13 @@ class PopulationTab(QWidget, AsyncRunner):
         self.minhand_cb.currentTextChanged.connect(self._filter)
         frow.addWidget(self.minhand_cb)
         ll.addLayout(frow)
+
+        # Explains an otherwise-mysterious empty pool (see _update_empty_state)
+        # rather than just leaving a bare table with no rows and no reason why.
+        self.empty_state_lbl = lbl("", dim=True)
+        self.empty_state_lbl.setWordWrap(True)
+        self.empty_state_lbl.hide()
+        ll.addWidget(self.empty_state_lbl)
 
         self.table = QTableWidget()
         self.table.setColumnCount(len(COLUMNS))
@@ -253,7 +261,8 @@ class PopulationTab(QWidget, AsyncRunner):
             self.table.setUpdatesEnabled(True)
 
     def _on_pool_insights_clicked(self):
-        PoolInsightsDialog(self.db, self.hero, self._d_from, self._d_to, self._stake, parent=self).exec()
+        PoolInsightsDialog(self.db, self.hero, self._d_from, self._d_to, self._stake,
+                           self._site, parent=self).exec()
 
     def _on_select(self, row, _col):
         name_item = self.table.item(row, 0)
@@ -264,23 +273,71 @@ class PopulationTab(QWidget, AsyncRunner):
         self._selected = name
         self._selected_is_group = bool(group_names)
         if group_names:
-            self.detail.show_villain_group(group_names, name, self._d_from, self._d_to, self._stake, self.pop_averages)
+            self.detail.show_villain_group(group_names, name, self._d_from, self._d_to, self._stake,
+                                            self.pop_averages, site=self._site,
+                                            session_type=self._session_type)
         else:
-            self.detail.show_villain(name, self._d_from, self._d_to, self._stake, self.pop_averages, self.rows)
+            self.detail.show_villain(name, self._d_from, self._d_to, self._stake, self.pop_averages,
+                                      self.rows, site=self._site, session_type=self._session_type)
 
-    def refresh(self, d_from, d_to, stake=None):
-        """Re-filter to the given period (and optional stake) and rebuild
-        the villain pool — a fast indexed SQL query (database/queries.py)
-        instead of a Python re-walk of raw hand actions."""
-        self._d_from, self._d_to, self._stake = d_from, d_to, stake
+    def _update_empty_state(self):
+        """A hand count > 0 with zero villains almost always means every
+        one of those hands came from a source that anonymizes opponents
+        (GGPoker) — worth explaining explicitly rather than just leaving
+        a bare, unexplained empty table that looks broken."""
+        if self.rows:
+            self.empty_state_lbl.hide()
+            return
         self.run_async(
-            lambda: population_summary_query(self.db, self.hero, d_from, d_to, stake),
+            lambda: hero_hand_sources_query(
+                self.db, self.hero, self._d_from, self._d_to, self._stake, self._site),
+            self._on_empty_state_sources,
+            key="population_empty_state",
+        )
+
+    def _on_empty_state_sources(self, sources: dict):
+        total = sum(sources.values())
+        if total == 0:
+            if self.db.hand_count() == 0:
+                self.empty_state_lbl.hide()  # nothing imported at all — the top banner covers this
+            else:
+                self.empty_state_lbl.setText(
+                    "No hands match the current Period / Stakes / Site filter — try widening it.")
+                self.empty_state_lbl.show()
+            return
+        if sources.get('ggpoker', 0) == total:
+            self.empty_state_lbl.setText(
+                "No villains to show for this period — every hand here is from GGPoker, "
+                "which anonymizes opponents with a new random label every hand, so there's "
+                "no stable identity to track. Hands from other sites will show up here normally.")
+        else:
+            self.empty_state_lbl.setText(
+                "No villains to show yet for this period — come back once you've played "
+                "more hands against the same opponents.")
+        self.empty_state_lbl.show()
+
+    def refresh(self, d_from, d_to, stake=None, site=None, session_type=None):
+        """Re-filter to the given period (and optional stake/site) and
+        rebuild the villain pool — a fast indexed SQL query
+        (database/queries.py) instead of a Python re-walk of raw hand
+        actions. `session_type` ('cash'/'tournament') comes from the
+        global $/T toggle in the filter bar (see ui/game_type_toggle.py),
+        not a local combo."""
+        self._d_from, self._d_to, self._stake, self._site = d_from, d_to, stake, site
+        self._session_type = session_type
+        self._do_refresh()
+
+    def _do_refresh(self):
+        self.run_async(
+            lambda: population_summary_query(
+                self.db, self.hero, self._d_from, self._d_to, self._stake, self._site, self._session_type),
             self._on_refreshed,
         )
 
     def _on_refreshed(self, rows):
         self.rows = rows
         self.pop_averages = compute_population_averages(self.rows)
+        self._update_empty_state()
         self._filter()
         if self._selected_is_group:
             # The combined row isn't a real stored villain — re-derive its
@@ -289,12 +346,15 @@ class PopulationTab(QWidget, AsyncRunner):
             visible = self._apply_sort(self._visible_rows())
             label, names = self._group_label_and_names(visible)
             if label:
-                self.detail.show_villain_group(names, label, self._d_from, self._d_to, self._stake, self.pop_averages)
+                self.detail.show_villain_group(names, label, self._d_from, self._d_to, self._stake,
+                                                self.pop_averages, site=self._site,
+                                                session_type=self._session_type)
             else:
                 self._selected = None
                 self._selected_is_group = False
         elif self._selected and self._selected in self.rows:
             self.detail.show_villain(self._selected, self._d_from, self._d_to, self._stake,
-                                      self.pop_averages, self.rows)
+                                      self.pop_averages, self.rows, site=self._site,
+                                      session_type=self._session_type)
         elif self._selected:
             self._selected = None

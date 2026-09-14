@@ -45,6 +45,14 @@ class Hand:
     raw_text: Optional[str] = None
     source: Optional[str] = None
     unmatched_lines: list[str] = field(default_factory=list)
+    # 'cash' or 'tournament' — a tournament's per-hand chip movements aren't
+    # real money until the tournament ends, so this discriminator protects
+    # every $-denominated aggregate (profit, BB/100) from silently summing
+    # chip counts as dollars. tournament_id/buy_in/fee are None for cash.
+    session_type: str = 'cash'
+    tournament_id: Optional[str] = None
+    buy_in: Optional[float] = None
+    fee: Optional[float] = None
 
     @property
     def played_date(self) -> Optional[date]:

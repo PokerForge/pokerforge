@@ -12,11 +12,14 @@ from models.hand import Hand
 from database.hand_stats_builder import build_player_stat_rows
 
 _STATS_COLS = [
-    'hand_id', 'player_name', 'played_at', 'big_blind', 'profit', 'ev', 'position', 'stakes_label',
+    'hand_id', 'player_name', 'played_at', 'big_blind', 'profit', 'ev', 'position', 'stakes_label', 'source',
+    'session_type', 'tournament_id', 'rake',
     'vpip_pfr_opp', 'vpip', 'pfr', 'three_bet_opp', 'three_bet', 'faced_3bet_opp', 'folded_to_3bet',
+    'faced_3bet_as_raiser_opp', 'folded_to_3bet_as_raiser',
     'four_bet_opp', 'four_bet', 'faced_4bet_opp', 'folded_to_4bet',
     'squeeze_opp', 'squeeze', 'squeeze_def_opp', 'raised_vs_squeeze', 'folded_to_squeeze',
-    'folded_vs_open', 'saw_flop', 'reached_showdown', 'won_hand',
+    'folded_vs_open', 'limp_opp', 'limp', 'limp_call_opp', 'limp_call',
+    'saw_flop', 'reached_showdown', 'won_hand',
     'steal_opp', 'steal_att', 'steal_success', 'blind_def_opp', 'folded_to_steal',
 ]
 for _street in ('flop', 'turn', 'river'):
@@ -35,7 +38,7 @@ for _street in ('preflop', 'flop', 'turn', 'river'):
     _STATS_COLS += [f'{_street}_bet_raise', f'{_street}_call', f'{_street}_fold']
 
 
-def _build_hand_data(hand: Hand, ev_iterations: int):
+def _build_hand_data(hand: Hand, ev_iterations: int, hero: str | None = None):
     """Picklable, module-level worker for multiprocessing — the per-hand
     stat computation is fully independent hand-to-hand (no shared state),
     which makes it a good fit for parallelizing across CPU cores, unlike
@@ -52,13 +55,14 @@ def _build_hand_data(hand: Hand, ev_iterations: int):
         hand.played_at.isoformat() if hand.played_at else None,
         hand.table_name, hand.table_size, hand.button_seat,
         hand.total_pot, hand.rake, json.dumps(hand.board), hand.raw_text,
+        hand.session_type, hand.tournament_id, hand.buy_in, hand.fee,
     )
     players_rows = [(hand.hand_id, p.name, p.seat, p.stack, json.dumps(p.hole_cards),
                       hand.winnings.get(p.name, 0.0)) for p in hand.players]
     actions_rows = [(hand.hand_id, a.street, a.player, a.action, a.amount, seq)
                      for seq, a in enumerate(hand.actions)]
     stats_rows = [[row.get(c) for c in _STATS_COLS]
-                  for row in build_player_stat_rows(hand, ev_iterations=ev_iterations)]
+                  for row in build_player_stat_rows(hand, ev_iterations=ev_iterations, hero=hero)]
     return hands_row, players_rows, actions_rows, stats_rows
 
 
@@ -93,6 +97,56 @@ class PokerDatabase:
             self.conn.execute(
                 "ALTER TABLE hand_player_stats ADD COLUMN vpip_pfr_opp INTEGER DEFAULT 1"
             )
+        if 'source' not in cols:
+            self.conn.execute("ALTER TABLE hand_player_stats ADD COLUMN source TEXT")
+            # Unlike vpip_pfr_opp above, this is fully and correctly
+            # backfillable in one pass — hands.source has always been
+            # recorded for every hand ever imported, so an existing
+            # database's Site filter works immediately rather than
+            # showing nothing until the next Rebuild Stats Database run.
+            self.conn.execute(
+                "UPDATE hand_player_stats SET source = "
+                "(SELECT source FROM hands WHERE hands.hand_id = hand_player_stats.hand_id) "
+                "WHERE source IS NULL"
+            )
+        if 'limp_opp' not in cols:
+            # New preflop flags (Limp %/Limp-Call %) — like vpip_pfr_opp,
+            # not backfillable from any other stored column, since limping
+            # is derived from the full preflop action sequence. Existing
+            # rows read as 0/0 (a blank stat) until the next Rebuild Stats
+            # Database run recomputes them from the raw actions.
+            for col in ('limp_opp', 'limp', 'limp_call_opp', 'limp_call'):
+                self.conn.execute(f"ALTER TABLE hand_player_stats ADD COLUMN {col} INTEGER")
+        if 'faced_3bet_as_raiser_opp' not in cols:
+            # Like limp_opp above, not backfillable from any other stored
+            # column — reads as 0/0 (a blank stat) until the next Rebuild
+            # Stats Database run recomputes it from the raw actions.
+            for col in ('faced_3bet_as_raiser_opp', 'folded_to_3bet_as_raiser'):
+                self.conn.execute(f"ALTER TABLE hand_player_stats ADD COLUMN {col} INTEGER")
+        if 'rake' not in cols:
+            self.conn.execute("ALTER TABLE hand_player_stats ADD COLUMN rake REAL")
+            # NOT a straight copy of hands.rake (that's the whole table's
+            # rake, not any one player's own share of it) -- like
+            # limp_opp above, this needs the full per-hand action replay
+            # (database/hand_stats_builder.py splits it evenly across
+            # whoever saw the flop) and reads as $0 until the next
+            # Rebuild Stats Database run recomputes it properly.
+        if 'session_type' not in cols:
+            # Fully backfillable for free, unlike the columns above: every
+            # hand imported before tournament support existed is
+            # unambiguously cash, and SQLite's ADD COLUMN ... DEFAULT
+            # already reports that value for every pre-existing row (no
+            # separate UPDATE needed, unlike `source` below).
+            self.conn.execute(
+                "ALTER TABLE hand_player_stats ADD COLUMN session_type TEXT NOT NULL DEFAULT 'cash'")
+            self.conn.execute("ALTER TABLE hand_player_stats ADD COLUMN tournament_id TEXT")
+
+        hand_cols = {row[1] for row in self.conn.execute("PRAGMA table_info(hands)")}
+        if 'session_type' not in hand_cols:
+            self.conn.execute("ALTER TABLE hands ADD COLUMN session_type TEXT NOT NULL DEFAULT 'cash'")
+            self.conn.execute("ALTER TABLE hands ADD COLUMN tournament_id TEXT")
+            self.conn.execute("ALTER TABLE hands ADD COLUMN buy_in REAL")
+            self.conn.execute("ALTER TABLE hands ADD COLUMN fee REAL")
 
     def close(self) -> None:
         self.conn.close()
@@ -100,7 +154,10 @@ class PokerDatabase:
     def existing_hand_ids(self) -> set[str]:
         return {row[0] for row in self.conn.execute("SELECT hand_id FROM hands")}
 
-    def hand_count(self) -> int:
+    def hand_count(self, session_type: str | None = None) -> int:
+        if session_type:
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM hands WHERE session_type = ?", (session_type,)).fetchone()[0]
         return self.conn.execute("SELECT COUNT(*) FROM hands").fetchone()[0]
 
     def get_file_fingerprints(self) -> dict[str, tuple[float, int]]:
@@ -115,12 +172,64 @@ class PokerDatabase:
             fingerprints)
         self.conn.commit()
 
+    def log_study_completion(self, stat_id: str, position: str) -> None:
+        """A "Mark Studied" click on a Study Queue priority — a habit-
+        tracking log, not a correctness record (see schema.sql). Timestamp
+        is the DB's own clock, not the caller's, for the same reason
+        imported_at/completed_at elsewhere in this schema are."""
+        self.conn.execute(
+            "INSERT INTO study_completions (stat_id, position) VALUES (?, ?)", (stat_id, position))
+        self.conn.commit()
+
+    def get_recent_study_completions(self, days: int = 7) -> set[tuple[str, str]]:
+        """{(stat_id, position)} marked studied within the last `days`
+        days — checked against a Study Queue priority to show "✓ Studied"
+        instead of nagging about something already just worked on."""
+        from datetime import datetime, timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        rows = self.conn.execute(
+            "SELECT DISTINCT stat_id, position FROM study_completions WHERE completed_at >= ?",
+            (cutoff,))
+        return {(stat_id, position) for stat_id, position in rows}
+
+    def get_study_completion_dates(self) -> list[date]:
+        """Every distinct calendar date with at least one "Mark Studied"
+        click, for core.study_queue.compute_streak_days — a habit streak
+        counts days worked, not how many leaks were marked in any one
+        day."""
+        rows = self.conn.execute("SELECT DISTINCT date(completed_at) FROM study_completions")
+        return [date.fromisoformat(r[0]) for r in rows]
+
+    def set_tournament_result(self, tournament_id: str, finish_position: int | None,
+                                field_size: int | None, payout: float | None,
+                                currency: str | None = None) -> None:
+        """Upserts a manually-entered tournament result — no hand-history
+        export contains a finish position or payout, only the hand-by-hand
+        action log, so this is the only way ROI/ITM% become real numbers
+        rather than just "how many tournaments have you played"."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO tournament_results "
+            "(tournament_id, finish_position, field_size, payout, currency) VALUES (?, ?, ?, ?, ?)",
+            (tournament_id, finish_position, field_size, payout, currency))
+        self.conn.commit()
+
+    def get_tournament_results(self) -> dict[str, tuple]:
+        """{tournament_id: (finish_position, field_size, payout, currency)}
+        for every logged result."""
+        rows = self.conn.execute(
+            "SELECT tournament_id, finish_position, field_size, payout, currency FROM tournament_results")
+        return {r[0]: r[1:] for r in rows}
+
+    def delete_tournament_result(self, tournament_id: str) -> None:
+        self.conn.execute("DELETE FROM tournament_results WHERE tournament_id = ?", (tournament_id,))
+        self.conn.commit()
+
     _HANDS_SQL = """INSERT OR IGNORE INTO hands
         (hand_id, source, game_type, currency, small_blind, big_blind,
          native_currency, native_small_blind, native_big_blind,
          played_at, table_name, table_size, button_seat, total_pot, rake,
-         board, raw_text)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+         board, raw_text, session_type, tournament_id, buy_in, fee)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
     _PLAYERS_SQL = """INSERT OR IGNORE INTO hand_players
         (hand_id, player_name, seat, stack, hole_cards, winnings)
         VALUES (?, ?, ?, ?, ?, ?)"""
@@ -129,7 +238,8 @@ class PokerDatabase:
         VALUES (?, ?, ?, ?, ?, ?)"""
 
     def import_hands(self, hands: list[Hand], ev_iterations: int = 3000,
-                      on_progress=None, batch_size: int = 500, workers: int | None = None) -> int:
+                      on_progress=None, batch_size: int = 500, workers: int | None = None,
+                      hero: str | None = None) -> int:
         """Imports any hands not already present. `on_progress(done, total)`
         is called periodically if given.
 
@@ -171,7 +281,7 @@ class PokerDatabase:
             return 0
 
         workers = workers or max(1, (os.cpu_count() or 2) - 1)
-        worker_fn = functools.partial(_build_hand_data, ev_iterations=ev_iterations)
+        worker_fn = functools.partial(_build_hand_data, ev_iterations=ev_iterations, hero=hero)
         done = 0
         with mp.Pool(processes=workers) as pool:
             for hr, prs, ars, srs in pool.imap_unordered(worker_fn, todo, chunksize=25):
@@ -217,10 +327,12 @@ class PokerDatabase:
         for row in self.conn.execute(
                 "SELECT hand_id, source, game_type, currency, small_blind, big_blind, "
                 "native_currency, native_small_blind, native_big_blind, played_at, "
-                "table_name, table_size, button_seat, total_pot, rake, board, raw_text FROM hands"):
+                "table_name, table_size, button_seat, total_pot, rake, board, raw_text, "
+                "session_type, tournament_id, buy_in, fee FROM hands"):
             (hand_id, source, game_type, currency, small_blind, big_blind,
              native_currency, native_small_blind, native_big_blind, played_at,
-             table_name, table_size, button_seat, total_pot, rake, board, raw_text) = row
+             table_name, table_size, button_seat, total_pot, rake, board, raw_text,
+             session_type, tournament_id, buy_in, fee) = row
             hands.append(Hand(
                 hand_id=hand_id, source=source, game_type=game_type, currency=currency,
                 small_blind=small_blind, big_blind=big_blind,
@@ -231,17 +343,28 @@ class PokerDatabase:
                 players=players_by_hand.get(hand_id, []), board=json.loads(board) if board else [],
                 actions=actions_by_hand.get(hand_id, []), total_pot=total_pot, rake=rake,
                 winnings=winnings_by_hand.get(hand_id, {}), raw_text=raw_text,
+                session_type=session_type or 'cash', tournament_id=tournament_id,
+                buy_in=buy_in, fee=fee,
             ))
         return hands
 
     def rebuild_hand_player_stats(self, ev_iterations: int = 500, on_progress=None,
-                                    batch_size: int = 500, workers: int | None = None) -> int:
+                                    batch_size: int = 500, workers: int | None = None,
+                                    hero: str | None = None) -> int:
         """Recomputes hand_player_stats for every hand already stored, from
         the raw hands/hand_players/actions tables — for when a stat
         formula in core/stats.py (or elsewhere in the analyzer chain)
         changes and existing precomputed rows need to be refreshed,
         without re-parsing the original hand-history files (which haven't
-        changed) or re-detecting hero/currency (also unchanged)."""
+        changed) or re-detecting hero/currency (also unchanged).
+
+        Pass the configured hero name as `hero` — GGPoker/Winning Network
+        hands stored here already have their hero seat renamed away from
+        the sites' own literal "Hero" placeholder (by
+        ui/hero_detect.py's normalize_hero_aliases, at the original import
+        time), so database/hand_stats_builder.py needs the resolved name
+        to still find that seat; omitting it silently drops every
+        GGPoker/Winning Network hand from the rebuilt stats entirely."""
         hands = self._load_all_hands()
         cur = self.conn.cursor()
         placeholders = ', '.join('?' for _ in _STATS_COLS)
@@ -260,7 +383,7 @@ class PokerDatabase:
             stats_rows.clear()
 
         workers = workers or max(1, (os.cpu_count() or 2) - 1)
-        worker_fn = functools.partial(_build_hand_data, ev_iterations=ev_iterations)
+        worker_fn = functools.partial(_build_hand_data, ev_iterations=ev_iterations, hero=hero)
         done = 0
         with mp.Pool(processes=workers) as pool:
             for _hr, _prs, _ars, srs in pool.imap_unordered(worker_fn, hands, chunksize=25):
