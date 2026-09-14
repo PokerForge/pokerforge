@@ -1,9 +1,29 @@
 import logging
 from pathlib import Path
 from core.hand_parser import parse_hand_history_file
+from core.ggpoker_hand_parser import parse_ggpoker_hand_history_file
+from core.pokerstars_hand_parser import parse_pokerstars_hand_history_file
+from core.winning_network_hand_parser import parse_winning_network_hand_history_file
 from core.xml_hand_parser import parse_session_file
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_txt_hands(text: str):
+    """iPoker, GGPoker, PokerStars, and Winning Network all export plain
+    `.txt` hand histories, so the file extension alone can't pick the
+    parser -- sniff the first line instead (GGPoker's format always opens
+    with "Poker Hand #...", PokerStars' with "PokerStars ... Hand #...",
+    Winning Network's with "***** Hand History For Game ...", and
+    iPoker's with "GAME #...")."""
+    stripped = text.lstrip()
+    if stripped.startswith('PokerStars'):
+        return parse_pokerstars_hand_history_file(text)
+    if stripped.startswith('Poker Hand #'):
+        return parse_ggpoker_hand_history_file(text)
+    if stripped.startswith('***** Hand History For Game '):
+        return parse_winning_network_hand_history_file(text)
+    return parse_hand_history_file(text)
 
 
 def missing_configured_folders(directories: list[str]) -> list[str]:
@@ -33,7 +53,7 @@ def parse_directory(directory: str | Path):
         files_seen += 1
         try:
             text = path.read_text(encoding='utf-8-sig', errors='replace')
-            file_hands, file_errors = parse_hand_history_file(text)
+            file_hands, file_errors = _parse_txt_hands(text)
             for h in file_hands:
                 if h.hand_id in seen_ids:
                     duplicates += 1
@@ -136,7 +156,7 @@ def parse_directory_incremental(directories: str | Path | list[str | Path], db, 
             files_parsed += 1
             try:
                 text = path.read_text(encoding='utf-8-sig', errors='replace')
-                file_hands, file_errors = parse_hand_history_file(text)
+                file_hands, file_errors = _parse_txt_hands(text)
                 _handle(path, file_hands, file_errors, lambda gid: f"{path}#{gid}")
                 new_fingerprints.append((str(path), fp[0], fp[1]))
             except Exception as exc:

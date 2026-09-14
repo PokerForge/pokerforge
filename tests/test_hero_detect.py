@@ -2,7 +2,7 @@
 "does this data actually look like yours?" sanity check — and
 dominant_currency()'s fallback when there's nothing to detect from."""
 from models.hand import Hand, Player
-from ui.hero_detect import hero_hand_share, dominant_currency
+from ui.hero_detect import hero_hand_share, dominant_currency, is_anon_placeholder
 
 
 def _hand(players):
@@ -44,3 +44,22 @@ def test_dominant_currency_falls_back_to_dollar_with_no_hero_hands():
     assert dominant_currency([], "Hero") == "$"
     hands = [Hand(hand_id="1", players=[Player(name="SomeoneElse")], currency="£")]
     assert dominant_currency(hands, "Hero") == "$"
+
+
+def test_is_anon_placeholder_matches_ipoker_anonymous_names():
+    assert is_anon_placeholder("Player 3")
+    assert is_anon_placeholder("Player 27")
+
+
+def test_is_anon_placeholder_does_not_match_real_names_even_hex_looking_ones():
+    # GGPoker's anonymized opponents are excluded by hand.source at
+    # import time (database/hand_stats_builder.py), NOT by name shape --
+    # a shape-based filter would wrongly hide real, persistent usernames
+    # on other sites that happen to look hex-like (confirmed against a
+    # real PokerStars export: "3033453", "ed777221", "dd19761976").
+    assert not is_anon_placeholder("Hero")
+    assert not is_anon_placeholder("Stony87")
+    assert not is_anon_placeholder("gunfluffy1595")
+    assert not is_anon_placeholder("448c7ca6")
+    assert not is_anon_placeholder("3033453")
+    assert not is_anon_placeholder("ed777221")

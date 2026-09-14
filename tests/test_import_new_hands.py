@@ -60,9 +60,10 @@ def test_small_batch_skips_the_progress_dialog(qapp, db, hand_dir, monkeypatch):
     dialog_calls = []
     monkeypatch.setattr(mod, "QProgressDialog", lambda *a, **k: dialog_calls.append(True) or _FakeDialog())
 
-    count = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
+    count, errors = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
 
     assert count == 2
+    assert errors == []
     assert dialog_calls == []
     assert db.hand_count() == 2
 
@@ -72,9 +73,10 @@ def test_large_batch_still_shows_the_progress_dialog(qapp, db, hand_dir, monkeyp
     dialog_calls = []
     monkeypatch.setattr(mod, "QProgressDialog", lambda *a, **k: dialog_calls.append(True) or _FakeDialog())
 
-    count = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
+    count, errors = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
 
     assert count == 20
+    assert errors == []
     assert dialog_calls == [True]
     assert db.hand_count() == 20
 
@@ -86,9 +88,10 @@ def test_default_threshold_always_shows_dialog_for_any_nonempty_batch(qapp, db, 
     dialog_calls = []
     monkeypatch.setattr(mod, "QProgressDialog", lambda *a, **k: dialog_calls.append(True) or _FakeDialog())
 
-    count = mod._import_new_hands(None, db, "Hero")
+    count, errors = mod._import_new_hands(None, db, "Hero")
 
     assert count == 1
+    assert errors == []
     assert dialog_calls == [True]
 
 
@@ -96,9 +99,10 @@ def test_no_new_hands_imports_nothing_and_skips_dialog_either_way(qapp, db, hand
     dialog_calls = []
     monkeypatch.setattr(mod, "QProgressDialog", lambda *a, **k: dialog_calls.append(True) or _FakeDialog())
 
-    count = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
+    count, errors = mod._import_new_hands(None, db, "Hero", dialog_threshold=15)
 
     assert count == 0
+    assert errors == []
     assert dialog_calls == []
 
 

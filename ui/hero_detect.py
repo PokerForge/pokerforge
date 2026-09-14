@@ -18,7 +18,21 @@ from config.settings import get_hero_aliases
 # etc. These labels aren't a consistent identity across hands (a different
 # real person can be "Player 3" in the next hand), so they must never be
 # aggregated into the villain pool as if they were one person.
+#
+# GGPoker has the same problem, worse (every opponent, every hand, a fresh
+# random label each time) — but it is NOT handled here by name shape. A
+# real 594-file PokerStars export turned up plenty of real, persistent
+# usernames that happen to look exactly like a random hex string
+# ("3033453", "ed777221"); a shape-based filter would wrongly hide those
+# real villains. GGPoker's exclusion is instead scoped to
+# `hand.source == 'ggpoker'` at import time — see
+# database/hand_stats_builder.py and core.ggpoker_hand_parser.GGPOKER_HERO_LABEL —
+# since a hand's own source is a fact, not a guess from a name's shape.
 ANON_PLACEHOLDER = re.compile(r"^Player \d+$")
+
+
+def is_anon_placeholder(name: str) -> bool:
+    return bool(ANON_PLACEHOLDER.match(name))
 
 
 def detect_hero(hands: list[Hand]) -> str:
