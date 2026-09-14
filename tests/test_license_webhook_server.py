@@ -26,12 +26,22 @@ def client():
     return srv.app.test_client()
 
 
+def _stripe_obj(data: dict):
+    """Wraps a plain dict as a real stripe.StripeObject (recursively, for
+    nested dicts/lists) -- the actual shape production code receives, and
+    NOT interchangeable with a plain dict: StripeObject supports []
+    indexing and `in` but not .get(), which is exactly the bug this test
+    suite originally missed by using plain dicts throughout (see
+    server/webhook_server.py::_field's docstring)."""
+    return srv.stripe.StripeObject.construct_from(data, "sk_test_dummy")
+
+
 def _subscription(sub_id="sub_1", status="active", period_end=1_900_000_000):
     return {"id": sub_id, "status": status, "current_period_end": period_end, "items": {"data": []}}
 
 
 def _mock_retrieve(monkeypatch, subscription):
-    monkeypatch.setattr(srv.stripe.Subscription, "retrieve", lambda sub_id: subscription)
+    monkeypatch.setattr(srv.stripe.Subscription, "retrieve", lambda sub_id: _stripe_obj(subscription))
 
 
 def _checkout_completed_event(event_id="evt_1", email="customer@example.com",
@@ -49,7 +59,7 @@ def _checkout_completed_event(event_id="evt_1", email="customer@example.com",
 
 def _post_event(client, event, monkeypatch):
     monkeypatch.setattr(srv.stripe.Webhook, "construct_event",
-                         lambda payload, sig, secret: event)
+                         lambda payload, sig, secret: _stripe_obj(event))
     return client.post("/webhook/stripe", data=b"{}", headers={"Stripe-Signature": "sig"})
 
 

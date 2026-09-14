@@ -97,17 +97,29 @@ def _license_for_subscription(conn: sqlite3.Connection, subscription_id: str):
     ).fetchone()
 
 
+def _field(obj, key: str, default=None):
+    """Reads `key` from `obj`, whether `obj` is a plain dict (as our test
+    fixtures build) or a real Stripe SDK object (as production webhooks
+    actually deliver). These are NOT interchangeable: stripe.StripeObject
+    supports [] indexing and `in`, but does not implement .get() the way
+    dict does -- calling .get() on one raises AttributeError. A real
+    checkout.session.completed event hit exactly this the first time this
+    went live: the handler crashed before ever issuing a key, silently
+    (from the customer's perspective -- they just never got an email)."""
+    return obj[key] if obj and key in obj else default
+
+
 def _subscription_period_end(subscription) -> int | None:
     """Stripe moved current_period_end from the Subscription object itself
     onto its line items in newer API versions -- covers both shapes since
     we don't control which API version any given account is pinned to.
     Safe for our case (one Price per subscription, never multi-item)."""
-    top_level = subscription.get("current_period_end")
+    top_level = _field(subscription, "current_period_end")
     if top_level is not None:
         return top_level
-    items = (subscription.get("items") or {}).get("data") or []
+    items = _field(_field(subscription, "items"), "data") or []
     if items:
-        return items[0].get("current_period_end")
+        return _field(items[0], "current_period_end")
     return None
 
 
@@ -147,14 +159,14 @@ def _send_license_email(to_email: str, key: str) -> None:
 
 def _handle_checkout_completed(conn: sqlite3.Connection, event) -> None:
     session = event["data"]["object"]
-    subscription_id = session.get("subscription")
+    subscription_id = _field(session, "subscription")
     if not subscription_id:
         app.logger.error("checkout.session.completed with no subscription (event %s)", event["id"])
         return
     if _license_for_subscription(conn, subscription_id):
         return  # already issued for this subscription -- a retried delivery
 
-    email = (session.get("customer_details") or {}).get("email") or session.get("customer_email")
+    email = _field(_field(session, "customer_details"), "email") or _field(session, "customer_email")
     if not email:
         app.logger.error("checkout.session.completed with no customer email (event %s)", event["id"])
         return
@@ -165,14 +177,14 @@ def _handle_checkout_completed(conn: sqlite3.Connection, event) -> None:
         "INSERT INTO licenses (license_key, email, stripe_customer_id, stripe_subscription_id, "
         "status, current_period_end, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-        (key, email, session.get("customer"), subscription_id,
+        (key, email, _field(session, "customer"), subscription_id,
          subscription["status"], _period_end_iso(_subscription_period_end(subscription))),
     )
     _send_license_email(email, key)
 
 
 def _handle_invoice_paid(conn: sqlite3.Connection, event) -> None:
-    subscription_id = event["data"]["object"].get("subscription")
+    subscription_id = _field(event["data"]["object"], "subscription")
     if not subscription_id:
         return
     subscription = stripe.Subscription.retrieve(subscription_id)
