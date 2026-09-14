@@ -1,7 +1,9 @@
 """core/study_queue.py — thin wrapper over diversify_leaks with a
 tighter one-per-stat cap for a short "what to study today" list."""
+from datetime import date, timedelta
+
 from core.leak_finder import LeakEntry
-from core.study_queue import build_study_queue, MAX_PRIORITIES
+from core.study_queue import build_study_queue, compute_streak_days, MAX_PRIORITIES
 
 
 def _entry(stat_id, position, score):
@@ -37,3 +39,32 @@ def test_custom_max_priorities_is_respected():
     leaks = [_entry(f"stat{i}", "BB", 100 - i) for i in range(5)]
     queue = build_study_queue(leaks, max_priorities=2)
     assert len(queue) == 2
+
+
+def test_streak_counts_consecutive_days_ending_today():
+    today = date(2026, 9, 13)
+    dates = {today, today - timedelta(1), today - timedelta(2)}
+    assert compute_streak_days(dates, today=today) == 3
+
+
+def test_streak_still_alive_if_yesterday_was_done_but_not_yet_today():
+    today = date(2026, 9, 13)
+    dates = {today - timedelta(1), today - timedelta(2)}
+    assert compute_streak_days(dates, today=today) == 2
+
+
+def test_streak_is_zero_once_a_full_day_is_missed():
+    today = date(2026, 9, 13)
+    dates = {today - timedelta(2), today - timedelta(3)}  # gap at yesterday
+    assert compute_streak_days(dates, today=today) == 0
+
+
+def test_streak_is_zero_with_no_completions_at_all():
+    assert compute_streak_days(set(), today=date(2026, 9, 13)) == 0
+
+
+def test_streak_ignores_dates_after_a_gap():
+    today = date(2026, 9, 13)
+    # Studied today and yesterday, then a gap, then an older isolated day.
+    dates = {today, today - timedelta(1), today - timedelta(5)}
+    assert compute_streak_days(dates, today=today) == 2

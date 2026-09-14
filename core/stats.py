@@ -76,6 +76,13 @@ class PlayerHandFlags:
     three_bet: bool = False
     faced_3bet_opp: bool = False
     folded_to_3bet: bool = False
+    # Narrower than the two above: restricted to the player's OWN open
+    # getting re-raised (vs. "faced_3bet_opp", which also counts e.g. a
+    # blind cold-folding to someone else's open+3bet before ever entering
+    # the pot). This is the population that actually supports "3-bet them
+    # relentlessly" — see ui/player_classify.py.
+    faced_3bet_as_raiser_opp: bool = False
+    folded_to_3bet_as_raiser: bool = False
     four_bet_opp: bool = False
     four_bet: bool = False
     faced_4bet_opp: bool = False
@@ -86,6 +93,10 @@ class PlayerHandFlags:
     raised_vs_squeeze: bool = False
     folded_to_squeeze: bool = False
     folded_vs_open: bool = False
+    limp_opp: bool = False
+    limp: bool = False
+    limp_call_opp: bool = False
+    limp_call: bool = False
 
 
 def _is_raise_like(action: str, committed_after: float, current_bet_before: float) -> bool:
@@ -180,6 +191,9 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
     decided_faced_4bet = set()
     decided_squeeze_opp = set()
     decided_squeeze_def = set()
+    decided_first_action = set()  # who has already had their first preflop decision
+    limped_players: set = set()   # players whose first decision was a limp
+    decided_limp_call = set()
     bb_player = None
     bb_acted = False   # any action beyond posting the blind = a genuine decision
 
@@ -202,6 +216,25 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
         if a.action == 'Uncalled Return':
             continue
 
+        # Limp: a player's first preflop decision, taken before anyone has
+        # raised, is a Call (i.e. just matching the big blind rather than
+        # raising or folding) — includes the SB completing, which is the
+        # same thing by another name. Limp-Call: having limped, the next
+        # time this player faces a live raise (someone opened over the
+        # limp), did they call it? Both fold-to and re-raise-after-limping
+        # are tracked implicitly (limp_call_opp true, limp_call false).
+        if raise_level == 0 and a.player not in decided_first_action:
+            decided_first_action.add(a.player)
+            f.limp_opp = True
+            if a.action == 'Call':
+                f.limp = True
+                limped_players.add(a.player)
+        elif a.player in limped_players and a.player not in decided_limp_call and raise_level >= 1:
+            f.limp_call_opp = True
+            decided_limp_call.add(a.player)
+            if a.action == 'Call':
+                f.limp_call = True
+
         if a.action == 'Fold':
             # Opportunity/outcome checks must run before folding is treated
             # as a no-op, since folding IS the outcome fold-to-Nbet detects
@@ -218,6 +251,9 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
                 decided_faced_3bet.add(a.player)
                 f.folded_to_3bet = True
                 f.four_bet_opp = True  # same population/decision point as faced_3bet_opp
+                if a.player == opener:
+                    f.faced_3bet_as_raiser_opp = True
+                    f.folded_to_3bet_as_raiser = True
             if raise_level >= 3 and a.player not in decided_faced_4bet:
                 f.faced_4bet_opp = True
                 decided_faced_4bet.add(a.player)
@@ -272,8 +308,12 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
             f.faced_3bet_opp = True
             decided_faced_3bet.add(a.player)
             f.four_bet_opp = True
+            if a.player == opener:
+                f.faced_3bet_as_raiser_opp = True
             if a.action == 'Fold':
                 f.folded_to_3bet = True
+                if a.player == opener:
+                    f.folded_to_3bet_as_raiser = True
             elif raise_like:
                 f.four_bet = True
 

@@ -72,7 +72,7 @@ def test_only_bb100_is_requested_once_even_if_already_in_stat_ids(qapp, db, monk
 
     seen = {}
 
-    def _fake_query(db, hero, d_from, d_to, stat_ids, stake, interval_days):
+    def _fake_query(db, hero, d_from, d_to, stat_ids, stake, site, interval_days):
         seen["stat_ids"] = stat_ids
         return ([], {}, [])
 
@@ -103,8 +103,8 @@ def test_trend_tab_button_opens_the_dialog(qapp, db, monkeypatch):
     opened = {}
 
     class _FakeDialog:
-        def __init__(self, db, hero, d_from, d_to, stat_ids, interval_days, stake, parent=None):
-            opened["args"] = (db, hero, d_from, d_to, stat_ids, interval_days, stake)
+        def __init__(self, db, hero, d_from, d_to, stat_ids, interval_days, stake, site=None, parent=None):
+            opened["args"] = (db, hero, d_from, d_to, stat_ids, interval_days, stake, site)
 
         def exec(self):
             opened["executed"] = True
@@ -117,4 +117,4 @@ def test_trend_tab_button_opens_the_dialog(qapp, db, monkeypatch):
     tab._on_backtest_deviations_clicked()
 
     assert opened["executed"] is True
-    assert opened["args"] == (db, "Hero", date(2026, 6, 1), date(2026, 6, 30), ["vpip", "pfr"], 14, "NL10")
+    assert opened["args"] == (db, "Hero", date(2026, 6, 1), date(2026, 6, 30), ["vpip", "pfr"], 14, "NL10", None)

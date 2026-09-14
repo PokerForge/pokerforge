@@ -14,7 +14,7 @@ MIN_SAMPLE = 20
 
 
 class TiltReportDialog(QDialog, AsyncRunner):
-    def __init__(self, db, hero, d_from, d_to, stake=None, parent=None):
+    def __init__(self, db, hero, d_from, d_to, stake=None, site=None, parent=None):
         super().__init__(parent)
         self._init_async()
         self.setStyleSheet(STYLE)
@@ -36,13 +36,13 @@ class TiltReportDialog(QDialog, AsyncRunner):
         self._lay.addWidget(self._progress)
 
         self.run_async(
-            lambda: self._compute(db, hero, d_from, d_to, stake),
+            lambda: self._compute(db, hero, d_from, d_to, stake, site),
             self._render,
             on_error=self._on_error,
         )
 
-    def _compute(self, db, hero, d_from, d_to, stake):
-        rows = hero_vpip_sequence_query(db, hero, d_from, d_to, stake)
+    def _compute(self, db, hero, d_from, d_to, stake, site):
+        rows = hero_vpip_sequence_query(db, hero, d_from, d_to, stake, site)
         return compute_post_loss_vpip_shift(rows)
 
     def _on_error(self, msg):

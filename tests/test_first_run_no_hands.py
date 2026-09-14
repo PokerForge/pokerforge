@@ -182,6 +182,72 @@ def test_hands_found_with_no_errors_shows_nothing(monkeypatch):
     assert _FakeMessageBox.last is None
 
 
+def test_only_known_limitation_errors_show_a_calm_information_message(monkeypatch):
+    """A tournament hand (or any other documented, by-design gap) must
+    never prompt someone to file a bug report for expected behavior."""
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 1
+    monkeypatch.setattr(mod, "QMessageBox", _FakeMessageBox)
+
+    errors = [("C:\\hands\\t1.txt", "Tournament hands are not supported yet (cash games only)")]
+    mod._prompt_first_run_scan_issues(["C:\\hands"], ["hand1", "hand2"], errors)
+
+    assert len(_FakeMessageBox.info_calls) == 1
+    args, kwargs = _FakeMessageBox.info_calls[0]
+    text = args[2]
+    assert "not supported" in text
+    assert "isn't a bug" in text
+    assert "2" in text  # mentions the successfully-imported count
+
+
+def test_known_limitation_errors_never_reach_the_report_a_bug_flow(monkeypatch):
+    import ui.app_window as mod
+    monkeypatch.setattr(mod, "QMessageBox", _FakeMessageBox)
+    emailed = []
+    monkeypatch.setattr(mod, "_open_bug_report_email", lambda extra_body="": emailed.append(extra_body))
+
+    errors = [("C:\\hands\\t1.txt", "Tournament hands are not supported yet (cash games only)")]
+    mod._prompt_first_run_scan_issues(["C:\\hands"], [], errors)
+
+    assert emailed == []
+
+
+def test_real_errors_alongside_known_limitations_still_warns_but_only_counts_real_ones(monkeypatch):
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 1  # "OK"
+    monkeypatch.setattr(mod, "QMessageBox", _RecordingBox)
+
+    errors = [
+        ("C:\\hands\\bad1.xml", "unexpected end of file"),
+        ("C:\\hands\\t1.txt", "Tournament hands are not supported yet (cash games only)"),
+    ]
+    mod._prompt_first_run_scan_issues(["C:\\hands"], [], errors)
+
+    box = _FakeMessageBox.last
+    assert box.icon == _FakeMessageBox.Icon.Warning
+    assert "1 file" in box.text  # the real error, not both
+    assert "bad1.xml" in box.text
+    assert "1 hand(s) were skipped" in box.text  # the known-limitation one, mentioned separately
+
+
+def test_clicking_report_a_bug_with_mixed_errors_only_emails_real_ones(monkeypatch):
+    import ui.app_window as mod
+    _FakeMessageBox.simulate_click_index = 0  # "Report a Bug..."
+    monkeypatch.setattr(mod, "QMessageBox", _FakeMessageBox)
+    emailed = []
+    monkeypatch.setattr(mod, "_open_bug_report_email", lambda extra_body="": emailed.append(extra_body))
+
+    errors = [
+        ("C:\\hands\\bad1.xml", "unexpected end of file"),
+        ("C:\\hands\\t1.txt", "Tournament hands are not supported yet (cash games only)"),
+    ]
+    mod._prompt_first_run_scan_issues(["C:\\hands"], [], errors)
+
+    assert len(emailed) == 1
+    assert "bad1.xml" in emailed[0]
+    assert "t1.txt" not in emailed[0]
+
+
 def test_clicking_report_a_bug_opens_the_email_with_error_details(monkeypatch):
     import ui.app_window as mod
     _FakeMessageBox.simulate_click_index = 0  # "Report a Bug..."

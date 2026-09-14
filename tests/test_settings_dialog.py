@@ -114,6 +114,115 @@ def test_toggling_auto_refresh_alone_saves_without_restarting(qapp, monkeypatch)
     assert dlg.result() == 1  # accepted — the change was actually saved
 
 
+def test_prefills_existing_aliases(qapp):
+    from config.settings import set_hero_name, set_hero_aliases
+    from ui.settings_dialog import SettingsDialog
+
+    set_hero_name("Akali8010")
+    set_hero_aliases(["Doire11", "Hero"])
+    dlg = SettingsDialog()
+
+    items = [dlg.alias_list.item(i).text() for i in range(dlg.alias_list.count())]
+    assert items == ["Doire11", "Hero"]
+
+
+def test_adding_an_alias_and_saving_persists_it(qapp, monkeypatch):
+    from config.settings import set_hero_name, set_hero_aliases, get_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_hero_aliases([])
+    restart_calls = []
+    monkeypatch.setattr(mod, "restart_app", lambda: restart_calls.append(True))
+
+    dlg = mod.SettingsDialog()
+    dlg.alias_edit.setText("AlwaysSpeedin")
+    dlg._on_add_alias()
+    dlg._on_save()
+
+    assert get_hero_aliases() == ["AlwaysSpeedin"]
+    assert restart_calls == []  # alias-only change never needs a restart
+    assert dlg.result() == 1  # accepted — the change was actually saved
+
+
+def test_pressing_enter_in_the_alias_field_also_adds_it(qapp):
+    from config.settings import set_hero_name, set_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_hero_aliases([])
+    dlg = mod.SettingsDialog()
+    dlg.alias_edit.setText("AlwaysSpeedin")
+    dlg.alias_edit.returnPressed.emit()
+
+    assert dlg._aliases == ["AlwaysSpeedin"]
+    assert dlg.alias_edit.text() == ""  # cleared for the next one
+
+
+def test_removing_a_selected_alias_and_saving_persists_it(qapp, monkeypatch):
+    from config.settings import set_hero_name, set_hero_aliases, get_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_hero_aliases(["Doire11", "Hero"])
+    monkeypatch.setattr(mod, "restart_app", lambda: None)
+
+    dlg = mod.SettingsDialog()
+    dlg.alias_list.setCurrentItem(dlg.alias_list.item(dlg._aliases.index("Hero")))
+    dlg._on_remove_alias()
+    dlg._on_save()
+
+    assert get_hero_aliases() == ["Doire11"]
+
+
+def test_adding_the_current_username_itself_is_rejected(qapp, monkeypatch):
+    from config.settings import set_hero_name, set_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_hero_aliases([])
+    warn_calls = []
+    monkeypatch.setattr(mod.QMessageBox, "warning", staticmethod(lambda *a, **k: warn_calls.append(True)))
+
+    dlg = mod.SettingsDialog()
+    dlg.alias_edit.setText("Akali8010")
+    dlg._on_add_alias()
+
+    assert warn_calls == [True]
+    assert dlg._aliases == []
+
+
+def test_adding_a_duplicate_alias_is_a_silent_no_op(qapp):
+    from config.settings import set_hero_name, set_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_hero_aliases(["Doire11"])
+    dlg = mod.SettingsDialog()
+    dlg.alias_edit.setText("Doire11")
+    dlg._on_add_alias()
+
+    assert dlg._aliases == ["Doire11"]
+
+
+def test_only_touching_aliases_does_not_trigger_a_restart(qapp, monkeypatch):
+    from config.settings import set_hero_name, set_currency_symbol, set_hero_aliases
+    import ui.settings_dialog as mod
+
+    set_hero_name("Akali8010")
+    set_currency_symbol("£")
+    set_hero_aliases([])
+    restart_calls = []
+    monkeypatch.setattr(mod, "restart_app", lambda: restart_calls.append(True))
+
+    dlg = mod.SettingsDialog()
+    dlg.alias_edit.setText("Hero")
+    dlg._on_add_alias()
+    dlg._on_save()
+
+    assert restart_calls == []
+
+
 def test_auto_refresh_toggle_persists_alongside_a_restart_triggering_change(qapp, monkeypatch):
     from config.settings import get_live_auto_refresh_enabled, set_hero_name, set_currency_symbol
     import ui.settings_dialog as mod

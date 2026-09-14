@@ -23,7 +23,10 @@ _CATEGORY_NAME = {
     4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 8: 'Straight Flush',
 }
 
-SITE_LABELS = {'ipoker': 'iPoker Network', 'grosvenor_xml': 'Grosvenor Poker'}
+SITE_LABELS = {
+    'ipoker': 'iPoker Network', 'grosvenor_xml': 'Grosvenor Poker',
+    'pokerstars': 'PokerStars', 'ggpoker': 'GGPoker', 'winning_network': 'Winning Network',
+}
 
 
 def describe_hand_rank(cards: list[str]) -> str:

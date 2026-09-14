@@ -96,4 +96,4 @@ def test_clicking_a_similar_player_calls_show_villain_with_current_filters(detai
     detail._on_similar_player_clicked("Twin")
 
     assert calls == [(("Twin", "2026-01-01", "2026-06-01", "£0.05/£0.10", {"vpip": 24.0},
-                        {"Twin": detail._all_rows["Twin"]}), {})]
+                        {"Twin": detail._all_rows["Twin"]}, None, None), {})]

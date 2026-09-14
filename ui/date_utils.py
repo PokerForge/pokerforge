@@ -42,3 +42,17 @@ def date_range(period):
     if period == "This Year":      return date(today.year, 1, 1), today
     if period == "Last Year":      return date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
     return date(2000, 1, 1), today
+
+
+def month_range(year: int, month: int) -> tuple[date, date]:
+    """First and last day of the given calendar month."""
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, last_day)
+
+
+def previous_month(year: int, month: int) -> tuple[int, int]:
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
+def next_month(year: int, month: int) -> tuple[int, int]:
+    return (year + 1, 1) if month == 12 else (year, month + 1)

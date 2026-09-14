@@ -9,7 +9,7 @@ from ui.graph_overlay import HoverCrosshair
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame, QScrollArea, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QFrame, QScrollArea, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QCheckBox, QTabWidget, QComboBox,
 )
 
@@ -23,7 +23,7 @@ from ui.hand_replayer import HandReplayDialog
 from ui.csv_export import export_table_to_csv
 from ui.deviation_backtest_dialog import DeviationBacktestDialog
 from core.leak_finder import find_leaks, diversify_leaks, LEAK_CATEGORIES
-from core.study_queue import build_study_queue, HANDS_PER_STUDY_SESSION
+from core.study_queue import build_study_queue, compute_streak_days, HANDS_PER_STUDY_SESSION
 from database.hand_loader import load_hands_bulk
 from database.queries import (
     villain_stats_query, position_breakdown_query, population_by_position_query, pct_trend_query,
@@ -31,6 +31,7 @@ from database.queries import (
 )
 from config.settings import (
     get_position_table_stat_ids, set_position_table_stat_ids,
+    get_overall_stat_ids, set_overall_stat_ids,
     get_trend_stat_ids, set_trend_stat_ids, get_trend_interval_days, set_trend_interval_days,
 )
 
@@ -170,6 +171,70 @@ class PositionColumnsDialog(QDialog):
         return [s["id"] for s in STAT_REGISTRY if self._checks[s["id"]].isChecked()]
 
 
+class OverallStatsDialog(QDialog):
+    """Lets the user pick which STAT_REGISTRY stats appear as cards on the
+    Overall tab, grouped the same way as the cards themselves
+    (Overall/Preflop/Flop/Turn/River). Unlike By Position's columns
+    (a curated default subset), every stat is shown here by default —
+    this dialog is for trimming down, not building up."""
+
+    def __init__(self, selected_ids: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Customise Overall Stats")
+        self.setStyleSheet(STYLE)
+        self.resize(420, 600)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(10)
+        lay.addWidget(lbl("Choose which stats to show as cards.", size=11, dim=True))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        inner = QWidget()
+        inner_lay = QVBoxLayout(inner)
+        inner_lay.setSpacing(6)
+        self._checks: dict[str, QCheckBox] = {}
+        for category in STAT_CATEGORIES:
+            stats_in_cat = [s for s in STAT_REGISTRY if s["category"] == category]
+            if not stats_in_cat:
+                continue
+            inner_lay.addWidget(lbl(category.upper(), size=11, bold=True))
+            for stat in stats_in_cat:
+                cb = QCheckBox(stat["label"])
+                cb.setChecked(stat["id"] in selected_ids)
+                cb.setCursor(Qt.CursorShape.PointingHandCursor)
+                self._checks[stat["id"]] = cb
+                inner_lay.addWidget(cb)
+        inner_lay.addStretch()
+        scroll.setWidget(inner)
+        lay.addWidget(scroll, 1)
+
+        btn_row = QHBoxLayout()
+        reset_btn = QPushButton("Reset to Default")
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.clicked.connect(self._reset)
+        btn_row.addWidget(reset_btn)
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        lay.addLayout(btn_row)
+
+    def _reset(self):
+        for cb in self._checks.values():
+            cb.setChecked(True)
+
+    def selected_ids(self) -> list[str]:
+        # Keep STAT_REGISTRY's own (category-grouped) order rather than
+        # dict-insertion order, so card order stays stable/sensible
+        # regardless of what the user (un)checks.
+        return [s["id"] for s in STAT_REGISTRY if self._checks[s["id"]].isChecked()]
+
+
 class TrendOptionsDialog(QDialog):
     """Which percentage stats to plot on the Trend tab, plus the check-in
     interval to bucket by — only "pct"-kind stats are offered, since the
@@ -280,8 +345,10 @@ class StatsTab(QWidget, AsyncRunner):
         self.hero = hero
         self.db = db
         self.currency = currency
-        self._current_d_from = self._current_d_to = self._current_stake = None
+        self._current_d_from = self._current_d_to = self._current_stake = self._current_site = None
+        self._current_session_type = None
         self._last_result = None
+        self._overall_stat_ids = get_overall_stat_ids() or [s['id'] for s in STAT_REGISTRY]
         self._position_stat_ids = get_position_table_stat_ids() or list(POSITION_DEFAULT_STAT_IDS)
         self._position_row_labels: list[str] = []
         self._position_col_stat_ids: list[str | None] = []
@@ -293,27 +360,47 @@ class StatsTab(QWidget, AsyncRunner):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
 
+        header_row = QHBoxLayout()
         self.hands_lbl = lbl("", dim=True)
-        outer.addWidget(self.hands_lbl)
+        header_row.addWidget(self.hands_lbl)
+        header_row.addStretch()
+        outer.addLayout(header_row)
 
         self.sub_tabs = QTabWidget()
+        self.overall_scroll, self.overall_lay = _scroll_page()
         self.overview_scroll, self.overview_lay = _scroll_page()
         self.position_scroll, self.position_lay = _scroll_page()
+        self.study_scroll, self.study_lay = _scroll_page()
         self.trend_page = self._build_trend_page()
+        self.sub_tabs.addTab(self.overall_scroll, "  Overall  ")
         self.sub_tabs.addTab(self.position_scroll, "  By Position  ")
+        self.sub_tabs.addTab(self.study_scroll, "  Study  ")
         self.sub_tabs.addTab(self.overview_scroll, "  Leaks  ")
         self.sub_tabs.addTab(self.trend_page, "  Trend  ")
         outer.addWidget(self.sub_tabs, 1)
 
-    def refresh(self, db, hero, d_from, d_to, currency="£", stake=None):
+    def refresh(self, db, hero, d_from, d_to, currency="£", stake=None, site=None, session_type=None):
         self.db = db
         self.hero = hero
         self.currency = currency
         self._current_d_from, self._current_d_to, self._current_stake = d_from, d_to, stake
+        self._current_site = site
+        # Driven by the global $/T toggle in the filter bar now (see
+        # ui/game_type_toggle.py), not a local combo — 'cash'/'tournament',
+        # never None/"All" once the toggle is wired up in app_window.py,
+        # but kept optional here so direct construction (tests, or a
+        # caller that genuinely wants everything) still works.
+        self._current_session_type = session_type
+        self._do_refresh()
+
+    def _do_refresh(self):
+        db, hero = self.db, self.hero
+        d_from, d_to, stake, site = self._current_d_from, self._current_d_to, self._current_stake, self._current_site
+        st = self._current_session_type
         self.run_async(
-            lambda: (villain_stats_query(db, hero, d_from, d_to, stake),
-                      position_breakdown_query(db, hero, d_from, d_to, stake),
-                      population_by_position_query(db, hero, d_from, d_to, stake)),
+            lambda: (villain_stats_query(db, hero, d_from, d_to, stake, site, st),
+                      position_breakdown_query(db, hero, d_from, d_to, stake, site, st),
+                      population_by_position_query(db, hero, d_from, d_to, stake, site, st)),
             self._render,
         )
         self._refresh_trend()
@@ -321,35 +408,48 @@ class StatsTab(QWidget, AsyncRunner):
     def _refresh_trend(self):
         self.run_async(
             lambda: pct_trend_query(self.db, self.hero, self._current_d_from, self._current_d_to,
-                                      self._trend_stat_ids, self._current_stake, self._trend_interval_days),
+                                      self._trend_stat_ids, self._current_stake, self._current_site,
+                                      self._trend_interval_days, self._current_session_type),
             self._render_trend,
             key="trend",
         )
 
     def _on_stat_clicked(self, stat):
         rows = hands_for_stat_query(self.db, self.hero, stat['id'],
-                                     self._current_d_from, self._current_d_to, self._current_stake)
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     site=self._current_site, session_type=self._current_session_type)
         HandListDialog(rows, self.db, self.hero, stat['label'], self.currency, parent=self).exec()
 
     def _on_leak_clicked(self, leak_id, title):
         rows = hands_for_leak_query(self.db, self.hero, leak_id,
-                                     self._current_d_from, self._current_d_to, self._current_stake)
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     site=self._current_site, session_type=self._current_session_type)
         HandListDialog(rows, self.db, self.hero, title, self.currency, parent=self).exec()
 
-    def _build_study_queue_card(self, study_queue):
+    def _build_study_queue_card(self, study_queue, recent_completions, streak):
         """A short, prioritized list (core.study_queue) on top of the full
         ranked "Leaks by Position" card below — 3 genuinely different
         leaks to work through rather than 20 numbers to read. Each
         priority opens the replayer loaded with up to
-        HANDS_PER_STUDY_SESSION of that leak's own recent hands."""
+        HANDS_PER_STUDY_SESSION of that leak's own recent hands.
+
+        `recent_completions`: {(stat_id, position)} marked studied within
+        core.study_queue.STUDIED_RECENTLY_DAYS — shows "✓ Studied" instead
+        of nagging about something just worked on. `streak`: consecutive
+        days (compute_streak_days) with at least one "Mark Studied" click
+        on anything, shown as a small habit-tracking indicator in the
+        header — marking something studied never changes the underlying
+        leak itself (that's still driven purely by real stat deviations),
+        it's accountability, not a correctness signal."""
         frame = QFrame()
         frame.setObjectName("card")
         lay = QVBoxLayout(frame)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(8)
-        lay.addWidget(lbl(
-            "\U0001f3af YOUR STUDY QUEUE  ·  work through your biggest leaks one at a time",
-            size=11, dim=True))
+        header_text = "\U0001f3af YOUR STUDY QUEUE  ·  work through your biggest leaks one at a time"
+        if streak > 0:
+            header_text += f"  ·  \U0001f525 {streak}-day streak"
+        lay.addWidget(lbl(header_text, size=11, dim=True))
 
         for i, leak in enumerate(study_queue, 1):
             row_w = QFrame()
@@ -368,14 +468,30 @@ class StatsTab(QWidget, AsyncRunner):
             study_btn.setToolTip(f"{leak.sample:,} hands behind this leak in total")
             study_btn.clicked.connect(lambda _checked, l=leak: self._on_study_leak_clicked(l))
             rl.addWidget(study_btn)
+            if (leak.stat_id, leak.position) in recent_completions:
+                done_lbl = lbl("✓ Studied", size=12)
+                done_lbl.setStyleSheet(f"color:{GREEN};")
+                rl.addWidget(done_lbl)
+            else:
+                mark_btn = QPushButton("Mark Studied")
+                mark_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                mark_btn.setToolTip("Log that you worked on this — doesn't change the stat itself")
+                mark_btn.clicked.connect(lambda _checked, l=leak: self._on_mark_studied_clicked(l))
+                rl.addWidget(mark_btn)
             lay.addWidget(row_w)
 
         return frame
 
+    def _on_mark_studied_clicked(self, leak):
+        self.db.log_study_completion(leak.stat_id, leak.position)
+        if self._last_result is not None:
+            self._render(self._last_result)
+
     def _on_study_leak_clicked(self, leak):
         rows = hands_for_stat_query(self.db, self.hero, leak.stat_id,
                                      self._current_d_from, self._current_d_to, self._current_stake,
-                                     position=leak.position)
+                                     position=leak.position, site=self._current_site,
+                                     session_type=self._current_session_type)
         rows = sorted(rows, key=lambda r: r[1] or "", reverse=True)[:HANDS_PER_STUDY_SESSION]
         hand_ids = [r[0] for r in rows]
         hands_by_id = load_hands_bulk(self.db, hand_ids)
@@ -399,9 +515,16 @@ class StatsTab(QWidget, AsyncRunner):
         lay.setSpacing(8)
 
         header_row = QHBoxLayout()
-        header_row.addWidget(lbl(
-            "LEAKS BY POSITION  ·  ranked by deviation × sample size  ·  click one to see example hands",
-            size=11, dim=True), 1)
+        # Shortened to the same "click one to see example hands" trailer
+        # as the "YOUR LEAKS" card next to it (full explanation moved to
+        # a tooltip) -- side by side, the old much-longer header text
+        # stretched nearly to the combo box while "YOUR LEAKS" left most
+        # of its own card empty, making the two look misaligned even
+        # though both start at the exact same 13px indent from their own
+        # card's edge.
+        header_lbl = lbl("LEAKS BY POSITION  ·  click one to see example hands", size=11, dim=True)
+        header_lbl.setToolTip("Ranked by deviation from the population, weighted by sample size")
+        header_row.addWidget(header_lbl, 1)
         category_cb = QComboBox()
         category_cb.addItems(["All"] + list(LEAK_CATEGORIES.keys()))
         category_cb.setCurrentText(self._leak_category)
@@ -455,6 +578,13 @@ class StatsTab(QWidget, AsyncRunner):
                 f"{leak.sample:,} hands", dim=True, size=11))
             lay.addWidget(row_w)
 
+        # Without this, a QHBoxLayout sibling (see the "Your Leaks" card
+        # this sits next to) stretches both cards to match whichever is
+        # taller -- any leftover space in the shorter one then gets
+        # redistributed into its existing widgets instead of sitting as
+        # blank space, visibly inflating a header/row's height and
+        # throwing off its own internal alignment.
+        lay.addStretch()
         return frame
 
     def _on_leak_category_changed(self, category):
@@ -471,7 +601,8 @@ class StatsTab(QWidget, AsyncRunner):
         # not attempted here across 10 stats x 2 possible directions.
         rows = hands_for_stat_query(self.db, self.hero, leak.stat_id,
                                      self._current_d_from, self._current_d_to, self._current_stake,
-                                     position=leak.position)
+                                     position=leak.position, site=self._current_site,
+                                     session_type=self._current_session_type)
         label = f"{leak.stat_label} — {leak.position}"
         HandListDialog(rows, self.db, self.hero, label, self.currency, parent=self).exec()
 
@@ -484,7 +615,8 @@ class StatsTab(QWidget, AsyncRunner):
 
         if stat_id is None:  # the "Position" label column itself — every hand played there
             rows = hands_for_position_query(self.db, self.hero, position_filter,
-                                             self._current_d_from, self._current_d_to, self._current_stake)
+                                             self._current_d_from, self._current_d_to, self._current_stake,
+                                             site=self._current_site, session_type=self._current_session_type)
             label = "All Hands" if position_filter is None else f"All Hands — {position_filter}"
             self._show_position_hands(rows, label)
             return
@@ -494,7 +626,8 @@ class StatsTab(QWidget, AsyncRunner):
         stat = STAT_REGISTRY_BY_ID[stat_id]
         rows = hands_for_stat_query(self.db, self.hero, stat_id,
                                      self._current_d_from, self._current_d_to, self._current_stake,
-                                     position=position_filter)
+                                     position=position_filter, site=self._current_site,
+                                     session_type=self._current_session_type)
         label = stat['label'] if position_filter is None else f"{stat['label']} — {position_filter}"
         self._show_position_hands(rows, label)
 
@@ -513,6 +646,14 @@ class StatsTab(QWidget, AsyncRunner):
             if self._last_result is not None:
                 self._render(self._last_result)
 
+    def _on_overall_customise_clicked(self):
+        dlg = OverallStatsDialog(self._overall_stat_ids, parent=self)
+        if dlg.exec():
+            self._overall_stat_ids = dlg.selected_ids()
+            set_overall_stat_ids(self._overall_stat_ids)
+            if self._last_result is not None:
+                self._render(self._last_result)
+
     def _on_trend_customise_clicked(self):
         dlg = TrendOptionsDialog(self._trend_stat_ids, self._trend_interval_days, parent=self)
         if dlg.exec():
@@ -525,7 +666,8 @@ class StatsTab(QWidget, AsyncRunner):
     def _on_backtest_deviations_clicked(self):
         DeviationBacktestDialog(
             self.db, self.hero, self._current_d_from, self._current_d_to,
-            self._trend_stat_ids, self._trend_interval_days, self._current_stake, parent=self).exec()
+            self._trend_stat_ids, self._trend_interval_days, self._current_stake,
+            self._current_site, parent=self).exec()
 
     def _clear(self, layout):
         while layout.count():
@@ -539,43 +681,39 @@ class StatsTab(QWidget, AsyncRunner):
         (values, hand_count, _, opp_counts), by_position, population_by_position = result
         self.hands_lbl.setText(f"{hand_count:,} hands")
 
-        self._render_overview(values, opp_counts, by_position, population_by_position)
+        cross_leaks = find_leaks(by_position, population_by_position) if hand_count else []
+        self._render_overall(values, hand_count, opp_counts)
+        self._render_study(hand_count, cross_leaks)
+        self._render_overview(values, hand_count, opp_counts, cross_leaks)
         self._render_position(values, hand_count, by_position)
 
-    def _render_overview(self, values, opp_counts, by_position, population_by_position):
-        self._clear(self.overview_lay)
+    def _render_overall(self, values, hand_count, opp_counts):
+        self._clear(self.overall_lay)
 
-        cross_leaks = find_leaks(by_position, population_by_position)
-        study_queue = build_study_queue(cross_leaks)
-        if study_queue:
-            self.overview_lay.addWidget(self._build_study_queue_card(study_queue))
-        if cross_leaks:
-            self.overview_lay.addWidget(self._build_cross_leaks_card(cross_leaks))
+        # A container widget, not addLayout() directly -- self._clear()
+        # only calls deleteLater() on item.widget(), so a bare nested
+        # layout's own child widgets would never get torn down on the
+        # next refresh (see the same fix in _render_overview above).
+        header_widget = QWidget()
+        header_row = QHBoxLayout(header_widget)
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.addWidget(lbl("Which stats are shown here as cards.", size=11, dim=True), 1)
+        customise_btn = QPushButton("Customise")
+        customise_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        customise_btn.clicked.connect(self._on_overall_customise_clicked)
+        header_row.addWidget(customise_btn)
+        self.overall_lay.addWidget(header_widget)
 
-        leaks_frame = QFrame()
-        leaks_frame.setObjectName("card")
-        lfl = QVBoxLayout(leaks_frame)
-        lfl.setContentsMargins(12, 12, 12, 12)
-        lfl.setSpacing(8)
-        lfl.addWidget(lbl("YOUR LEAKS  ·  click one to see example hands", size=11, dim=True))
-        for icon, title, advice, leak_id in generate_hero_leaks(values, opp_counts):
-            drillable = leak_id is not None
-            row_w = _ClickableFrame() if drillable else QFrame()
-            row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
-            if drillable:
-                row_w.setCursor(Qt.CursorShape.PointingHandCursor)
-                row_w.setToolTip("Click to see example hands")
-                row_w.clicked.connect(lambda lid=leak_id, t=title: self._on_leak_clicked(lid, t))
-            rl = QVBoxLayout(row_w)
-            rl.setContentsMargins(12, 8, 12, 8)
-            rl.setSpacing(2)
-            rl.addWidget(lbl(f"{icon}  {title}", bold=True, size=12))
-            rl.addWidget(lbl(advice, dim=True, size=11))
-            lfl.addWidget(row_w)
-        self.overview_lay.addWidget(leaks_frame)
+        if hand_count == 0 and self.db.hand_count() > 0:
+            self.overall_lay.addWidget(lbl(
+                "No hands match the current Period / Stakes / Site filter — try widening it.",
+                dim=True))
+            self.overall_lay.addStretch()
+            return
 
         for category in STAT_CATEGORIES:
-            stats_in_cat = [s for s in STAT_REGISTRY if s['category'] == category]
+            stats_in_cat = [s for s in STAT_REGISTRY
+                             if s['category'] == category and s['id'] in self._overall_stat_ids]
             if not stats_in_cat:
                 continue
             card_frame = QFrame()
@@ -584,15 +722,27 @@ class StatsTab(QWidget, AsyncRunner):
             cfl.setContentsMargins(12, 12, 12, 12)
             cfl.setSpacing(8)
 
+            # Rows of up to 7 cards, each row its own QHBoxLayout with
+            # every card given equal stretch -- unlike a QGridLayout
+            # (fixed columns shared down every row), this makes EVERY
+            # row, including a partial last one (e.g. PREFLOP's trailing
+            # 2-card row), stretch to fill the full width edge-to-edge
+            # instead of leaving a gap where the missing columns would
+            # have been.
+            CARDS_PER_ROW = 7
             grid_holder = QWidget()
-            grid = QGridLayout(grid_holder)
+            grid = QVBoxLayout(grid_holder)
             grid.setContentsMargins(0, 0, 0, 0)
             grid.setSpacing(8)
-            for i, stat in enumerate(stats_in_cat):
-                grid.addWidget(
-                    _make_stat_card(stat, values.get(stat['id']), None, self._on_stat_clicked,
-                                     sample_n=opp_counts.get(stat['id'])),
-                    i // 7, i % 7)
+            for row_start in range(0, len(stats_in_cat), CARDS_PER_ROW):
+                row_lay = QHBoxLayout()
+                row_lay.setSpacing(8)
+                for stat in stats_in_cat[row_start:row_start + CARDS_PER_ROW]:
+                    row_lay.addWidget(
+                        _make_stat_card(stat, values.get(stat['id']), None, self._on_stat_clicked,
+                                         sample_n=opp_counts.get(stat['id'])),
+                        1)
+                grid.addLayout(row_lay)
 
             # Clickable header collapses/expands this category's stat grid
             # — same interaction as the villain profile panel. Turn/River
@@ -616,7 +766,90 @@ class StatsTab(QWidget, AsyncRunner):
 
             cfl.addWidget(header_btn)
             cfl.addWidget(grid_holder)
-            self.overview_lay.addWidget(card_frame)
+            self.overall_lay.addWidget(card_frame)
+        self.overall_lay.addStretch()
+
+    def _render_study(self, hand_count, cross_leaks):
+        self._clear(self.study_lay)
+
+        if hand_count == 0 and self.db.hand_count() > 0:
+            self.study_lay.addWidget(lbl(
+                "No hands match the current Period / Stakes / Site filter — try widening it.",
+                dim=True))
+            self.study_lay.addStretch()
+            return
+
+        study_queue = build_study_queue(cross_leaks)
+        if not study_queue:
+            self.study_lay.addWidget(lbl(
+                "No leak stands out enough yet on this sample to prioritize — check back as you "
+                "play more hands, or browse Leaks by Position for the full picture.", dim=True))
+            self.study_lay.addStretch()
+            return
+
+        recent_completions = self.db.get_recent_study_completions()
+        streak = compute_streak_days(self.db.get_study_completion_dates())
+        self.study_lay.addWidget(self._build_study_queue_card(study_queue, recent_completions, streak))
+        self.study_lay.addStretch()
+
+    def _render_overview(self, values, hand_count, opp_counts, cross_leaks):
+        self._clear(self.overview_lay)
+
+        if hand_count == 0 and self.db.hand_count() > 0:
+            self.overview_lay.addWidget(lbl(
+                "No hands match the current Period / Stakes / Site filter — try widening it.",
+                dim=True))
+            self.overview_lay.addStretch()
+            return
+
+        leaks_frame = QFrame()
+        leaks_frame.setObjectName("card")
+        lfl = QVBoxLayout(leaks_frame)
+        lfl.setContentsMargins(12, 12, 12, 12)
+        lfl.setSpacing(8)
+        lfl.addWidget(lbl("YOUR LEAKS  ·  click one to see example hands", size=11, dim=True))
+        for icon, title, advice, leak_id in generate_hero_leaks(values, opp_counts):
+            drillable = leak_id is not None
+            row_w = _ClickableFrame() if drillable else QFrame()
+            row_w.setStyleSheet(f"background:{BG3};border-radius:6px;border:none;")
+            if drillable:
+                row_w.setCursor(Qt.CursorShape.PointingHandCursor)
+                row_w.setToolTip("Click to see example hands")
+                row_w.clicked.connect(lambda lid=leak_id, t=title: self._on_leak_clicked(lid, t))
+            rl = QVBoxLayout(row_w)
+            rl.setContentsMargins(12, 8, 12, 8)
+            rl.setSpacing(2)
+            rl.addWidget(lbl(f"{icon}  {title}", bold=True, size=12))
+            rl.addWidget(lbl(advice, dim=True, size=11))
+            lfl.addWidget(row_w)
+        # See the matching addStretch() in _build_cross_leaks_card — this
+        # card sits right next to that one in a QHBoxLayout and usually
+        # has fewer rows, so without this its own leftover height (from
+        # being stretched to match the taller sibling) would inflate the
+        # header/row widgets above instead of just padding the bottom.
+        lfl.addStretch()
+
+        # "Leaks by Position" and "Your Leaks" side by side rather than
+        # stacked — both are leak lists (one position-specific, one
+        # overall), so pairing them cuts the vertical scroll roughly in
+        # half instead of reading as one long column of similar cards.
+        # Falls back to just "Your Leaks" alone (full width) on the rare
+        # sample too small for any cross-position leak to qualify.
+        if cross_leaks:
+            # A container widget, not addLayout() directly -- self._clear()
+            # only calls deleteLater() on item.widget(), so a bare nested
+            # layout's own child widgets would never get torn down on the
+            # next refresh (they'd just silently pile up behind whatever
+            # renders after them).
+            leaks_row_widget = QWidget()
+            leaks_row = QHBoxLayout(leaks_row_widget)
+            leaks_row.setContentsMargins(0, 0, 0, 0)
+            leaks_row.setSpacing(12)
+            leaks_row.addWidget(self._build_cross_leaks_card(cross_leaks), 1)
+            leaks_row.addWidget(leaks_frame, 1)
+            self.overview_lay.addWidget(leaks_row_widget)
+        else:
+            self.overview_lay.addWidget(leaks_frame)
         self.overview_lay.addStretch()
 
     def _position_columns(self):
@@ -650,6 +883,11 @@ class StatsTab(QWidget, AsyncRunner):
         customise_btn.clicked.connect(self._on_customise_clicked)
         header_row.addWidget(customise_btn)
         cl.addLayout(header_row)
+
+        if overall_hand_count == 0 and self.db.hand_count() > 0:
+            cl.addWidget(lbl(
+                "No hands match the current Period / Stakes / Site filter — try widening it.",
+                dim=True))
 
         position_columns = self._position_columns()
         labels = [label for label, _, _ in position_columns]

@@ -47,7 +47,12 @@ def generate_leaks(values: dict, opp_counts: dict | None = None) -> list[tuple[s
     vpip = values.get('vpip')
     pfr = values.get('pfr')
     tb = values.get('three_bet')
-    f3 = values.get('fold_3bet')
+    # Narrower than the plain "fold_3bet" percentage shown in Stats/
+    # Population — restricted to hands where THIS PLAYER opened and got
+    # re-raised, since "3-Bet them relentlessly" only follows from how
+    # they react when their own raise is challenged, not from folds to a
+    # pot someone else already raised-and-3-bet before they ever acted.
+    f3 = values.get('fold_3bet_as_raiser')
     fb = values.get('four_bet')
     f4 = values.get('fold_4bet')
     wtsd = values.get('wtsd')
@@ -63,7 +68,7 @@ def generate_leaks(values: dict, opp_counts: dict | None = None) -> list[tuple[s
             leaks.append(("\U0001f7e0", "Low 3-Bet",
                            "Steal aggressively — they rarely push back preflop.", "three_bet_low"))
 
-    if f3 is not None and enough('fold_3bet'):
+    if f3 is not None and enough('fold_3bet_as_raiser'):
         if f3 > 70:
             leaks.append(("\U0001f534", "Over-folds to 3-Bets",
                            "3-Bet them relentlessly from any position. They give up too easily.", "fold_3bet_high"))
@@ -157,7 +162,10 @@ def generate_hero_leaks(values: dict, opp_counts: dict | None = None) -> list[tu
     vpip = values.get('vpip')
     pfr = values.get('pfr')
     tb = values.get('three_bet')
-    f3 = values.get('fold_3bet')
+    # See generate_leaks above — restricted to hands where hero opened and
+    # got re-raised, not cold folds to a pot someone else already
+    # raised-and-3-bet before hero ever acted.
+    f3 = values.get('fold_3bet_as_raiser')
     fb = values.get('four_bet')
     f4 = values.get('fold_4bet')
     fsteal = values.get('fold_to_steal')
@@ -192,7 +200,7 @@ def generate_hero_leaks(values: dict, opp_counts: dict | None = None) -> list[tu
                            "Consider 3-betting a bit more — opponents can play back at you cheaply "
                            "knowing you rarely do.", "three_bet_low"))
 
-    if f3 is not None and enough('fold_3bet'):
+    if f3 is not None and enough('fold_3bet_as_raiser'):
         if f3 > 70:
             leaks.append(("\U0001f534", "Over-folding to 3-Bets",
                            "You're an easy target for 3-bet bluffs. Defend (call or 4-bet) more often, "

@@ -17,6 +17,8 @@ from ui.stakes import stakes_label
 OVERVIEW_STATS = [
     ("Hands", "hands", "int"),
     ("Profit", "profit", "money"),
+    ("Rakeback", "rakeback", "money"),
+    ("Profit & Rakeback", "profit_rakeback", "money"),
     ("BB/100", "bb100", "signed"),
     ("EV BB/100", "ev_bb100", "signed"),
     ("VPIP %", "vpip", "pct", 22, 26),

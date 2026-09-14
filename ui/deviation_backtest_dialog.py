@@ -22,7 +22,7 @@ def _bb100_html(bb100):
 
 
 class DeviationBacktestDialog(QDialog, AsyncRunner):
-    def __init__(self, db, hero, d_from, d_to, stat_ids, interval_days, stake=None, parent=None):
+    def __init__(self, db, hero, d_from, d_to, stat_ids, interval_days, stake=None, site=None, parent=None):
         super().__init__(parent)
         self._init_async()
         self.setStyleSheet(STYLE)
@@ -47,7 +47,7 @@ class DeviationBacktestDialog(QDialog, AsyncRunner):
         self._stat_ids = list(stat_ids)
         query_stat_ids = list(dict.fromkeys(self._stat_ids + ["bb100"]))
         self.run_async(
-            lambda: pct_trend_query(db, hero, d_from, d_to, query_stat_ids, stake, interval_days),
+            lambda: pct_trend_query(db, hero, d_from, d_to, query_stat_ids, stake, site, interval_days),
             self._render,
             on_error=self._on_error,
         )

@@ -16,7 +16,7 @@ from core.river_sizing import classify_river_sizing_vs_strength, SIZING_BUCKETS
 
 
 class PoolInsightsDialog(QDialog, AsyncRunner):
-    def __init__(self, db, hero, d_from, d_to, stake=None, parent=None):
+    def __init__(self, db, hero, d_from, d_to, stake=None, site=None, parent=None):
         super().__init__(parent)
         self._init_async()
         self.setStyleSheet(STYLE)
@@ -38,13 +38,13 @@ class PoolInsightsDialog(QDialog, AsyncRunner):
         self._lay.addWidget(self._progress)
 
         self.run_async(
-            lambda: self._compute(db, hero, d_from, d_to, stake),
+            lambda: self._compute(db, hero, d_from, d_to, stake, site),
             self._render,
             on_error=self._on_error,
         )
 
-    def _compute(self, db, hero, d_from, d_to, stake):
-        hand_ids = showdown_hand_ids_query(db, hero, d_from, d_to, stake)
+    def _compute(self, db, hero, d_from, d_to, stake, site):
+        hand_ids = showdown_hand_ids_query(db, hero, d_from, d_to, stake, site)
         hands_by_id = load_hands_bulk(db, hand_ids)
         return classify_river_sizing_vs_strength(list(hands_by_id.values()), exclude_player=hero)
 

@@ -58,8 +58,18 @@ def test_direct_three_bet_with_no_prior_call_is_not_a_squeeze():
     assert flags["BTN"].faced_3bet_opp is True and flags["BTN"].folded_to_3bet is True
     assert flags["BTN"].four_bet_opp is True and flags["BTN"].four_bet is False
     assert flags["BTN"].squeeze_def_opp is False  # no squeeze happened, just a plain 3-bet
+    # BTN is the original opener facing the re-raise — this is the
+    # narrower "folded when THEIR OWN open got 3-bet" population.
+    assert flags["BTN"].faced_3bet_as_raiser_opp is True
+    assert flags["BTN"].folded_to_3bet_as_raiser is True
 
     assert flags["BB"].faced_3bet_opp is True and flags["BB"].folded_to_3bet is True
+    # BB never opened — they're cold-folding to a raise-then-3bet that
+    # happened entirely before their own first decision, so this must
+    # NOT count as "folded when their own raise got 3-bet" even though
+    # the broader faced_3bet_opp/folded_to_3bet flags above are true.
+    assert flags["BB"].faced_3bet_as_raiser_opp is False
+    assert flags["BB"].folded_to_3bet_as_raiser is False
 
 
 def test_squeeze_is_a_3bet_that_follows_a_call_not_a_direct_reraise():
@@ -98,6 +108,99 @@ def test_four_bet_after_facing_a_3bet():
     assert flags["BTN"].faced_3bet_opp is True
     assert flags["BTN"].four_bet is True
     assert flags["SB"].faced_4bet_opp is True and flags["SB"].folded_to_4bet is True
+
+
+def test_limp_before_any_raise_is_a_limp():
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Call", 0.30),
+        ("PREFLOP", "SB", "Fold", None),
+        ("PREFLOP", "BB", "Check", None),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["BTN"].limp_opp is True and flags["BTN"].limp is True
+    assert flags["SB"].limp_opp is True and flags["SB"].limp is False  # folded instead of limping
+    assert flags["BB"].limp_opp is False  # checking their own BB option isn't a limp decision
+
+
+def test_sb_completing_the_blind_counts_as_a_limp():
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Fold", None),
+        ("PREFLOP", "SB", "Call", 0.15),
+        ("PREFLOP", "BB", "Check", None),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["SB"].limp_opp is True and flags["SB"].limp is True
+
+
+def test_opening_raise_is_a_limp_opportunity_declined_not_a_limp():
+    """A player's first decision while unopened is a "limp opportunity"
+    whether they limp, fold, or open-raise instead — but only a Call
+    counts as the limp itself. Nobody who acts after the raise gets a
+    limp opportunity at all this hand — the pot's already opened by the
+    time it's their turn."""
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Raise", 0.90),
+        ("PREFLOP", "SB", "Fold", None),
+        ("PREFLOP", "BB", "Fold", None),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["BTN"].limp_opp is True and flags["BTN"].limp is False
+    assert flags["SB"].limp_opp is False
+    assert flags["BB"].limp_opp is False
+
+
+def test_limp_then_facing_a_raise_and_calling_is_a_limp_call():
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Call", 0.30),
+        ("PREFLOP", "SB", "Raise", 0.90),
+        ("PREFLOP", "BB", "Fold", None),
+        ("PREFLOP", "BTN", "Call", 0.60),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["BTN"].limp is True
+    assert flags["BTN"].limp_call_opp is True and flags["BTN"].limp_call is True
+    assert flags["BB"].limp_opp is False  # never limped, never gets a limp-call opportunity either
+
+
+def test_limp_then_folding_to_a_raise_is_not_a_limp_call():
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Call", 0.30),
+        ("PREFLOP", "SB", "Raise", 0.90),
+        ("PREFLOP", "BB", "Fold", None),
+        ("PREFLOP", "BTN", "Fold", None),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["BTN"].limp_call_opp is True and flags["BTN"].limp_call is False
+
+
+def test_limp_then_reraising_is_not_a_limp_call():
+    hand = _hand([
+        ("PREFLOP", "SB", "Post SB", 0.15),
+        ("PREFLOP", "BB", "Post BB", 0.30),
+        ("PREFLOP", "BTN", "Call", 0.30),
+        ("PREFLOP", "SB", "Raise", 0.90),
+        ("PREFLOP", "BB", "Fold", None),
+        ("PREFLOP", "BTN", "Raise", 3.00),
+        ("PREFLOP", "SB", "Fold", None),
+    ])
+    flags = analyze_preflop(hand)
+
+    assert flags["BTN"].limp_call_opp is True and flags["BTN"].limp_call is False
 
 
 def test_bb_walk_is_not_a_vpip_pfr_opportunity():

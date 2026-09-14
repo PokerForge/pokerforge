@@ -61,7 +61,7 @@ def test_clicking_a_cross_leak_queries_hands_for_that_stat_and_position(stats_ta
     import ui.stats_tab as mod
     calls = []
     monkeypatch.setattr(mod, "hands_for_stat_query",
-                         lambda db, hero, stat_id, d_from, d_to, stake, position=None:
+                         lambda db, hero, stat_id, d_from, d_to, stake, position=None, site=None, session_type=None:
                              calls.append((stat_id, position)) or [])
     monkeypatch.setattr(mod, "HandListDialog", lambda *a, **k: _NullDialog())
 

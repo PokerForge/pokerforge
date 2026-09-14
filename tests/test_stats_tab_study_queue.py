@@ -35,7 +35,7 @@ def _leak(stat_id="vpip", position="BB", stat_label="VPIP", sample=120, score=10
 def test_card_shows_a_priority_row_per_queue_entry(stats_tab):
     from PyQt6.QtWidgets import QLabel
     queue = [_leak(stat_id="vpip", stat_label="VPIP"), _leak(stat_id="three_bet", stat_label="3-Bet")]
-    card = stats_tab._build_study_queue_card(queue)
+    card = stats_tab._build_study_queue_card(queue, set(), 0)
     all_text = " ".join(l.text() for l in card.findChildren(QLabel))
     assert "Priority 1" in all_text and "Priority 2" in all_text
     assert "VPIP — BB" in all_text
@@ -46,7 +46,7 @@ def test_study_button_caption_caps_at_hands_per_session(stats_tab):
     from ui.stats_tab import HANDS_PER_STUDY_SESSION
     from PyQt6.QtWidgets import QPushButton
     queue = [_leak(sample=HANDS_PER_STUDY_SESSION + 50)]
-    card = stats_tab._build_study_queue_card(queue)
+    card = stats_tab._build_study_queue_card(queue, set(), 0)
     buttons = [b.text() for b in card.findChildren(QPushButton)]
     assert f"Study {HANDS_PER_STUDY_SESSION} Hands" in buttons
 
@@ -55,9 +55,55 @@ def test_study_button_caption_uses_actual_sample_when_smaller(stats_tab):
     from ui.stats_tab import HANDS_PER_STUDY_SESSION
     from PyQt6.QtWidgets import QPushButton
     queue = [_leak(sample=5)]
-    card = stats_tab._build_study_queue_card(queue)
+    card = stats_tab._build_study_queue_card(queue, set(), 0)
     buttons = [b.text() for b in card.findChildren(QPushButton)]
     assert "Study 5 Hands" in buttons
+
+
+def test_streak_shown_in_the_header_when_positive(stats_tab):
+    from PyQt6.QtWidgets import QLabel
+    card = stats_tab._build_study_queue_card([_leak()], set(), 5)
+    all_text = " ".join(l.text() for l in card.findChildren(QLabel))
+    assert "5-day streak" in all_text
+
+
+def test_no_streak_text_when_streak_is_zero(stats_tab):
+    from PyQt6.QtWidgets import QLabel
+    card = stats_tab._build_study_queue_card([_leak()], set(), 0)
+    all_text = " ".join(l.text() for l in card.findChildren(QLabel))
+    assert "streak" not in all_text
+
+
+def test_recently_completed_leak_shows_studied_not_a_mark_button(stats_tab):
+    from PyQt6.QtWidgets import QPushButton, QLabel
+    leak = _leak(stat_id="vpip", position="BB")
+    card = stats_tab._build_study_queue_card([leak], {("vpip", "BB")}, 1)
+    buttons = [b.text() for b in card.findChildren(QPushButton)]
+    labels = [l.text() for l in card.findChildren(QLabel)]
+    assert "Mark Studied" not in buttons
+    assert any("Studied" in t for t in labels)
+
+
+def test_not_recently_completed_leak_shows_a_mark_button(stats_tab):
+    from PyQt6.QtWidgets import QPushButton
+    leak = _leak(stat_id="vpip", position="BB")
+    card = stats_tab._build_study_queue_card([leak], set(), 0)
+    buttons = [b.text() for b in card.findChildren(QPushButton)]
+    assert "Mark Studied" in buttons
+
+
+def test_clicking_mark_studied_logs_it_and_rerenders(stats_tab, monkeypatch):
+    leak = _leak(stat_id="vpip", position="BB")
+    logged = []
+    monkeypatch.setattr(stats_tab.db, "log_study_completion", lambda stat_id, position: logged.append((stat_id, position)))
+    rerendered = []
+    stats_tab._last_result = "sentinel"
+    monkeypatch.setattr(stats_tab, "_render", lambda result: rerendered.append(result))
+
+    stats_tab._on_mark_studied_clicked(leak)
+
+    assert logged == [("vpip", "BB")]
+    assert rerendered == ["sentinel"]
 
 
 def test_clicking_study_opens_the_replayer_with_recent_hands_capped(stats_tab, monkeypatch):
@@ -94,7 +140,7 @@ def test_clicking_study_passes_stat_id_and_position_to_the_query(stats_tab, monk
     import ui.stats_tab as mod
     calls = []
     monkeypatch.setattr(mod, "hands_for_stat_query",
-                         lambda db, hero, stat_id, d_from, d_to, stake, position=None:
+                         lambda db, hero, stat_id, d_from, d_to, stake, position=None, site=None, session_type=None:
                              calls.append((stat_id, position)) or [])
     monkeypatch.setattr(mod, "load_hands_bulk", lambda db, ids: {})
 

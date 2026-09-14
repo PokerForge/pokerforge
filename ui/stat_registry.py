@@ -32,6 +32,8 @@ STAT_REGISTRY = [
     dict(id="squeeze", label="Squeeze", category="Preflop", kind="pct"),
     dict(id="raise_vs_squeeze", label="Raise vs Squeeze", category="Preflop", kind="pct"),
     dict(id="fold_to_squeeze", label="Fold to Squeeze", category="Preflop", kind="pct"),
+    dict(id="limp", label="Limp", category="Preflop", kind="pct"),
+    dict(id="limp_call", label="Limp-Call", category="Preflop", kind="pct"),
     dict(id="steal_att", label="Steal Attempt", category="Preflop", kind="pct"),
     dict(id="steal_success", label="Steal Success", category="Preflop", kind="pct"),
     dict(id="fold_to_steal", label="Fold to Steal", category="Preflop", kind="pct", lo=55, hi=65),

@@ -87,6 +87,61 @@ def find_leaks(hero_by_position: dict, population_by_position: dict,
     return entries
 
 
+@dataclass
+class ImprovementEntry:
+    position: str
+    stat_id: str
+    stat_label: str
+    current_rate: float
+    previous_rate: float
+    population_rate: float
+    improvement: float  # positive = the gap to the population average shrank
+
+
+def find_biggest_improvement(current_by_position: dict, previous_by_position: dict,
+                              current_population_by_position: dict,
+                              previous_population_by_position: dict,
+                              min_sample: int = MIN_SAMPLE) -> "ImprovementEntry | None":
+    """"Improvement" here means the SAME (position, stat) deviation
+    find_leaks scores — |hero_rate - population_rate| — got smaller from
+    one period to the next, i.e. hero moved closer to the pool's own
+    average. Deliberately not a fixed "more/less is always better"
+    per-stat rule: whether higher or lower VPIP is "good" depends on
+    whether hero was already too loose or too tight, which the
+    population comparison already captures without needing a second,
+    separate directionality table to keep in sync with LEAK_STAT_IDS.
+    Requires enough sample in BOTH periods, on both the hero and
+    population side, to trust the comparison; returns None if nothing
+    both qualifies and actually improved."""
+    best = None
+    for position, (cur_values, _cur_hands, cur_opp) in current_by_position.items():
+        prev_data = previous_by_position.get(position)
+        cur_pop_data = current_population_by_position.get(position)
+        prev_pop_data = previous_population_by_position.get(position)
+        if not prev_data or not cur_pop_data or not prev_pop_data:
+            continue
+        prev_values, _prev_hands, prev_opp = prev_data
+        cur_pop_values, _, _ = cur_pop_data
+        prev_pop_values, _, _ = prev_pop_data
+        for stat_id in LEAK_STAT_IDS:
+            cur_rate = cur_values.get(stat_id)
+            prev_rate = prev_values.get(stat_id)
+            cur_pop_rate = cur_pop_values.get(stat_id)
+            prev_pop_rate = prev_pop_values.get(stat_id)
+            if None in (cur_rate, prev_rate, cur_pop_rate, prev_pop_rate):
+                continue
+            if (cur_opp.get(stat_id) or 0) < min_sample or (prev_opp.get(stat_id) or 0) < min_sample:
+                continue
+            improvement = round(abs(prev_rate - prev_pop_rate) - abs(cur_rate - cur_pop_rate), 2)
+            if improvement > 0 and (best is None or improvement > best.improvement):
+                best = ImprovementEntry(
+                    position=position, stat_id=stat_id, stat_label=STAT_LABELS.get(stat_id, stat_id),
+                    current_rate=cur_rate, previous_rate=prev_rate, population_rate=cur_pop_rate,
+                    improvement=improvement,
+                )
+    return best
+
+
 def diversify_leaks(entries: list[LeakEntry], max_per_stat: int = 2) -> list[LeakEntry]:
     """`entries` sorted by score, e.g. find_leaks's return. Keeps only the
     top `max_per_stat` entries for any one stat_id, so one dominant stat

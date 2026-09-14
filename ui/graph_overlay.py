@@ -10,6 +10,25 @@ from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QToolButt
 from ui.theme import BG2, BORDER, TEXT, DIM
 
 
+def suggest_stats_box_prefer_bottom(total_series: list[float]) -> bool:
+    """Should DraggableStatsBox's default spot sit in the lower half of
+    the plot (True) or the upper half (False)? The box always sits at a
+    fixed pixel offset from the left edge, so what matters is only where
+    the line actually is near hand 1 — not its overall range — since a
+    graph that starts flat and swings wildly later would never collide
+    with the box regardless of where it eventually ends up. True (the
+    original fixed default) if there's no data yet to judge by."""
+    if not total_series:
+        return True
+    lo, hi = min(total_series), max(total_series)
+    if hi == lo:
+        return True
+    window = max(1, min(20, len(total_series) // 10))
+    early_avg = sum(total_series[:window]) / window
+    frac = (early_avg - lo) / (hi - lo)  # 0 = bottom of range, 1 = top
+    return frac >= 0.5
+
+
 class DraggableStatsBox(QFrame):
     """A small "label: value" panel that floats over a plot and can be
     dragged anywhere within it, matching PT4's movable stats box. Rows are
@@ -36,6 +55,14 @@ class DraggableStatsBox(QFrame):
         self._row_order: list[str] = []
         self._drag_offset: QPoint | None = None
         self._positioned = False
+        self._user_moved = False
+        # Where the default (never-dragged) spot sits, as a fraction of
+        # plot height — True keeps today's original default (a bit past
+        # halfway down), False moves it up near the top. set_preferred_corner
+        # switches this based on where the plotted line actually is near
+        # its start, so a strong uptrend from hand 1 doesn't run straight
+        # through the box every time the tab renders.
+        self._prefer_bottom = True
 
     def set_row(self, key, text, color=TEXT):
         if key not in self._rows:
@@ -54,6 +81,18 @@ class DraggableStatsBox(QFrame):
             self._rows[key].setVisible(visible)
             self._resize_and_place()
 
+    def set_preferred_corner(self, prefer_bottom: bool):
+        """Re-aim the default (never-dragged) spot at whichever vertical
+        half of the left edge the plotted line ISN'T occupying near hand
+        1 — called by the chart owner once real data is known. A no-op
+        once the user has actually dragged the box themselves; that
+        placement is theirs to keep across future refreshes."""
+        if self._user_moved or self._prefer_bottom == prefer_bottom:
+            return
+        self._prefer_bottom = prefer_bottom
+        self._positioned = False
+        self._resize_and_place()
+
     def _resize_and_place(self):
         self.adjustSize()
         if not self._positioned:
@@ -62,7 +101,8 @@ class DraggableStatsBox(QFrame):
             # committing to the default spot, so this doesn't lock in a
             # position computed from a near-zero height.
             if self._plot.height() > 60:
-                self.move(12, int(self._plot.height() * 0.55))
+                frac = 0.55 if self._prefer_bottom else 0.06
+                self.move(12, int(self._plot.height() * frac))
                 self._positioned = True
             else:
                 self.move(12, 12)
@@ -88,6 +128,7 @@ class DraggableStatsBox(QFrame):
             new_pos.setX(min(max(0, new_pos.x()), max_x))
             new_pos.setY(min(max(0, new_pos.y()), max_y))
             self.move(new_pos)
+            self._user_moved = True
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):

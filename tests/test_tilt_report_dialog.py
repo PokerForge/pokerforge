@@ -117,8 +117,8 @@ def test_sessions_tab_button_opens_the_dialog(qapp, db, monkeypatch):
     opened = {}
 
     class _FakeDialog:
-        def __init__(self, db, hero, d_from, d_to, stake, parent=None):
-            opened["args"] = (db, hero, d_from, d_to, stake)
+        def __init__(self, db, hero, d_from, d_to, stake, site=None, parent=None):
+            opened["args"] = (db, hero, d_from, d_to, stake, site)
 
         def exec(self):
             opened["executed"] = True
@@ -131,4 +131,4 @@ def test_sessions_tab_button_opens_the_dialog(qapp, db, monkeypatch):
     tab._on_tilt_report_clicked()
 
     assert opened["executed"] is True
-    assert opened["args"] == (db, "Hero", date(2026, 6, 1), date(2026, 6, 30), "NL10")
+    assert opened["args"] == (db, "Hero", date(2026, 6, 1), date(2026, 6, 30), "NL10", None)

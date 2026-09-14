@@ -3,7 +3,9 @@ leak finder. Pure function over pre-computed position-breakdown dicts
 (the exact shape database.queries.position_breakdown_query /
 population_by_position_query already return), so no database needed
 here — database/test_queries.py covers those two queries themselves."""
-from core.leak_finder import find_leaks, diversify_leaks, LeakEntry, MIN_SAMPLE, LEAK_CATEGORIES
+from core.leak_finder import (
+    find_leaks, diversify_leaks, find_biggest_improvement, LeakEntry, MIN_SAMPLE, LEAK_CATEGORIES,
+)
 
 
 def _pos_data(rate_by_stat, sample=50):
@@ -131,3 +133,64 @@ def test_leak_categories_cover_every_stat_with_no_overlap():
     all_categorized = [stat_id for stats in LEAK_CATEGORIES.values() for stat_id in stats]
     assert sorted(all_categorized) == sorted(LEAK_STAT_IDS)
     assert len(all_categorized) == len(set(all_categorized))
+
+
+def test_finds_biggest_improvement_when_deviation_shrank():
+    current = {"BB": _pos_data({"fold_3bet": 60.0})}
+    previous = {"BB": _pos_data({"fold_3bet": 74.0})}
+    current_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+    previous_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+
+    result = find_biggest_improvement(current, previous, current_pop, previous_pop)
+
+    assert result is not None
+    assert result.position == "BB"
+    assert result.stat_id == "fold_3bet"
+    # |74-55|=19 -> |60-55|=5: improvement of 14
+    assert result.improvement == 14.0
+
+
+def test_returns_none_when_the_deviation_got_worse_not_better():
+    current = {"BB": _pos_data({"fold_3bet": 80.0})}
+    previous = {"BB": _pos_data({"fold_3bet": 60.0})}
+    current_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+    previous_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+
+    assert find_biggest_improvement(current, previous, current_pop, previous_pop) is None
+
+
+def test_returns_none_without_enough_sample_in_both_periods():
+    current = {"BB": _pos_data({"fold_3bet": 60.0}, sample=MIN_SAMPLE - 1)}
+    previous = {"BB": _pos_data({"fold_3bet": 74.0})}
+    current_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+    previous_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+
+    assert find_biggest_improvement(current, previous, current_pop, previous_pop) is None
+
+
+def test_returns_none_when_position_missing_from_a_prior_period():
+    current = {"CO": _pos_data({"fold_3bet": 60.0})}
+    previous = {"BB": _pos_data({"fold_3bet": 74.0})}
+    current_pop = {"CO": _pos_data({"fold_3bet": 55.0})}
+    previous_pop = {"BB": _pos_data({"fold_3bet": 55.0})}
+
+    assert find_biggest_improvement(current, previous, current_pop, previous_pop) is None
+
+
+def test_picks_the_largest_improvement_across_multiple_candidates():
+    current = {
+        "BB": _pos_data({"fold_3bet": 60.0}),   # 19 -> 5, improvement 14
+        "CO": _pos_data({"vpip": 30.0}),        # 20 -> 5, improvement 15
+    }
+    previous = {
+        "BB": _pos_data({"fold_3bet": 74.0}),
+        "CO": _pos_data({"vpip": 45.0}),
+    }
+    current_pop = {"BB": _pos_data({"fold_3bet": 55.0}), "CO": _pos_data({"vpip": 25.0})}
+    previous_pop = {"BB": _pos_data({"fold_3bet": 55.0}), "CO": _pos_data({"vpip": 25.0})}
+
+    result = find_biggest_improvement(current, previous, current_pop, previous_pop)
+
+    assert result.stat_id == "vpip"
+    assert result.position == "CO"
+    assert result.improvement == 15.0

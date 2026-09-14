@@ -26,7 +26,7 @@ def test_generate_leaks_flags_extremely_loose_vpip_with_a_leak_id():
 
 
 def test_generate_leaks_falls_back_to_no_leaks_message_when_nothing_flags():
-    leaks = generate_leaks({"vpip": 24.0, "three_bet": 8.0, "fold_3bet": 55.0})
+    leaks = generate_leaks({"vpip": 24.0, "three_bet": 8.0, "fold_3bet_as_raiser": 55.0})
     assert len(leaks) == 1
     icon, title, advice, leak_id = leaks[0]
     assert title == "No major leaks detected"
@@ -55,8 +55,8 @@ def test_generate_leaks_includes_a_stat_exactly_at_the_minimum_sample():
 def test_generate_leaks_covers_every_branch_with_a_valid_leak_id():
     from database.queries import LEAK_HAND_CONDITIONS
     cases = [
-        {"three_bet": 2.0}, {"three_bet": 5.0}, {"fold_3bet": 80.0}, {"fold_3bet": 65.0},
-        {"fold_3bet": 20.0}, {"four_bet": 20.0}, {"fold_4bet": 70.0}, {"flop_fold_cbet": 70.0},
+        {"three_bet": 2.0}, {"three_bet": 5.0}, {"fold_3bet_as_raiser": 80.0}, {"fold_3bet_as_raiser": 65.0},
+        {"fold_3bet_as_raiser": 20.0}, {"four_bet": 20.0}, {"fold_4bet": 70.0}, {"flop_fold_cbet": 70.0},
         {"flop_fold_cbet": 55.0}, {"flop_fold_cbet": 20.0}, {"wtsd": 40.0}, {"wtsd": 32.0},
         {"wtsd": 15.0}, {"wsd": 30.0}, {"vpip": 45.0}, {"vpip": 35.0},
     ]

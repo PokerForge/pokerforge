@@ -74,22 +74,27 @@ class _ClickableFrame(QFrame):
             pass
 
 
-def _make_stat_card(stat, value, live_averages=None, on_click=None, sample_n=None):
+def _make_stat_card(stat, value, live_averages=None, on_click=None, sample_n=None, compact=False):
+    """`compact=True` packs more per row into a tight space (the villain
+    profile panel, which shares its page with the graph/tabs above it);
+    the default, roomier size is for a page with nothing else competing
+    for space, like the Stats tab's own dedicated Overall tab."""
     drillable = on_click is not None and stat['id'] in DRILLDOWN_STAT_IDS
     card = _ClickableFrame() if drillable else QFrame()
     card.setObjectName("card")
-    card.setMinimumWidth(110)
+    card.setMinimumWidth(90 if compact else 110)
     if drillable:
         card.setCursor(Qt.CursorShape.PointingHandCursor)
         card.setToolTip("Click to see the hands behind this stat")
         card.clicked.connect(lambda: on_click(stat))
     cl = QVBoxLayout(card)
-    cl.setContentsMargins(10, 8, 10, 8)
-    cl.setSpacing(2)
+    cl.setContentsMargins(*((8, 6, 8, 6) if compact else (10, 8, 10, 8)))
+    cl.setSpacing(1 if compact else 2)
     cl.addWidget(lbl(stat['label'], size=10, dim=True))
 
+    value_size = 15 if compact else 16
     if value is None:
-        cl.addWidget(lbl("—", size=16, bold=True))
+        cl.addWidget(lbl("—", size=value_size, bold=True))
         return card
 
     kind = stat['kind']
@@ -113,8 +118,8 @@ def _make_stat_card(stat, value, live_averages=None, on_click=None, sample_n=Non
                 color = RED
         text = f"{value:.2f}%"
 
-    val_lbl = lbl(text, size=16, bold=True)
-    val_lbl.setStyleSheet(f"color:{color};font-size:16px;font-weight:700;background:transparent;border:none;")
+    val_lbl = lbl(text, size=value_size, bold=True)
+    val_lbl.setStyleSheet(f"color:{color};font-size:{value_size}px;font-weight:700;background:transparent;border:none;")
     cl.addWidget(val_lbl)
 
     live_avg = (live_averages or {}).get(stat['id'])
@@ -139,6 +144,9 @@ class VillainDetail(QWidget, AsyncRunner):
         self._name_blurred = False
         self._pop_averages = {}
         self._all_rows = {}
+        self._current_stake = None
+        self._current_site = None
+        self._current_session_type = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
@@ -182,7 +190,14 @@ class VillainDetail(QWidget, AsyncRunner):
         # taller — the stats pane gets its own scroll area so it doesn't just
         # get squeezed to nothing when the graph grows.
         self.v_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.v_splitter.setHandleWidth(6)
+        self.v_splitter.setObjectName("villainSplitter")
+        # Wider handle than the theme default, styled transparent instead
+        # of the usual border-colored bar -- reads as real breathing room
+        # between the graph and the tabs below it rather than a hard line
+        # butted right up against both, while the handle stays just as
+        # draggable as before.
+        self.v_splitter.setHandleWidth(16)
+        self.v_splitter.setStyleSheet("QSplitter#villainSplitter::handle { background: transparent; }")
 
         # Graph — the plot widget and its curves are created ONCE; every
         # subsequent villain just calls .setData() on these same curves.
@@ -344,12 +359,14 @@ class VillainDetail(QWidget, AsyncRunner):
 
     def _on_stat_clicked(self, stat):
         rows = hands_for_stat_query(self.db, self._current_name, stat['id'],
-                                     self._current_d_from, self._current_d_to, self._current_stake)
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     site=self._current_site, session_type=self._current_session_type)
         HandListDialog(rows, self.db, self._current_name, stat['label'], self.currency, parent=self).exec()
 
     def _on_exploit_leak_clicked(self, leak_id, title):
         rows = hands_for_leak_query(self.db, self._current_name, leak_id,
-                                     self._current_d_from, self._current_d_to, self._current_stake)
+                                     self._current_d_from, self._current_d_to, self._current_stake,
+                                     site=self._current_site, session_type=self._current_session_type)
         HandListDialog(rows, self.db, self._current_name, title, self.currency, parent=self).exec()
 
     def _clear(self, layout):
@@ -359,13 +376,16 @@ class VillainDetail(QWidget, AsyncRunner):
             if w:
                 w.deleteLater()
 
-    def show_villain(self, name, d_from=None, d_to=None, stake=None, pop_averages=None, all_rows=None):
+    def show_villain(self, name, d_from=None, d_to=None, stake=None, pop_averages=None, all_rows=None,
+                      site=None, session_type=None):
         self._pop_averages = pop_averages or {}
         self._all_rows = all_rows or {}
         self._current_name = name
         self._current_d_from, self._current_d_to, self._current_stake = d_from, d_to, stake
+        self._current_site = site
+        self._current_session_type = session_type
         self.run_async(
-            lambda: (villain_stats_query(self.db, name, d_from, d_to, stake),
+            lambda: (villain_stats_query(self.db, name, d_from, d_to, stake, site, session_type),
                       villain_graph_query(self.db, self.hero, name, d_from, d_to)),
             lambda result: self._render_villain(name, result),
             on_error=lambda msg: self._show_error(name, msg),
@@ -379,9 +399,11 @@ class VillainDetail(QWidget, AsyncRunner):
         # (a minor, acceptable inconsistency: the list highlight only
         # updates the next time someone clicks a row there directly).
         self.show_villain(name, self._current_d_from, self._current_d_to, self._current_stake,
-                           self._pop_averages, self._all_rows)
+                           self._pop_averages, self._all_rows, self._current_site,
+                           self._current_session_type)
 
-    def show_villain_group(self, names, label, d_from=None, d_to=None, stake=None, pop_averages=None):
+    def show_villain_group(self, names, label, d_from=None, d_to=None, stake=None, pop_averages=None,
+                            site=None, session_type=None):
         """Same as show_villain, but pooled across a GROUP of villains (e.g.
         everyone currently tagged "Fish") — `label` is a display string, not
         a real player_name, so per-stat drill-down (which needs one real
@@ -390,8 +412,10 @@ class VillainDetail(QWidget, AsyncRunner):
         self._pop_averages = pop_averages or {}
         self._current_name = label
         self._current_d_from, self._current_d_to, self._current_stake = d_from, d_to, stake
+        self._current_site = site
+        self._current_session_type = session_type
         self.run_async(
-            lambda: (villain_group_stats_query(self.db, names, d_from, d_to, stake),
+            lambda: (villain_group_stats_query(self.db, names, d_from, d_to, stake, site, session_type),
                       villain_group_graph_query(self.db, self.hero, names, d_from, d_to)),
             lambda result: self._render_villain(label, result, is_group=True),
             on_error=lambda msg: self._show_error(label, msg),
@@ -490,13 +514,13 @@ class VillainDetail(QWidget, AsyncRunner):
             grid_holder = QWidget()
             grid = QGridLayout(grid_holder)
             grid.setContentsMargins(0, 0, 0, 0)
-            grid.setSpacing(8)
+            grid.setSpacing(6)
             for i, stat in enumerate(stats_in_cat):
                 grid.addWidget(
                     _make_stat_card(stat, values.get(stat['id']), self._pop_averages,
                                      None if is_group else self._on_stat_clicked,
-                                     sample_n=opp_counts.get(stat['id'])),
-                    i // 6, i % 6)
+                                     sample_n=opp_counts.get(stat['id']), compact=True),
+                    i // 8, i % 8)
 
             # Clickable header collapses/expands this category's stat grid.
             header_btn = QPushButton(f"▾  {category.upper()}")
