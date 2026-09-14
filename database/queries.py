@@ -10,12 +10,14 @@ high-volume villain) slow before."""
 from datetime import date, datetime, timedelta
 
 from ui.population_summary import PopulationRow
-from ui.hero_detect import ANON_PLACEHOLDER
+from ui.hero_detect import is_anon_placeholder
 from database.repository import _STATS_COLS
 from database.hand_loader import load_actions_and_winnings
 from core.settlement import settlement_for_player
+from core.licensing import should_gate_by_stakes, FREE_TIER_MAX_CASH_BB, FREE_TIER_MAX_TOURNEY_BUYIN
 
-_META_COLS = {'hand_id', 'player_name', 'played_at', 'big_blind', 'profit', 'ev', 'position', 'stakes_label'}
+_META_COLS = {'hand_id', 'player_name', 'played_at', 'big_blind', 'profit', 'ev', 'position', 'stakes_label', 'source',
+              'session_type', 'tournament_id', 'rake'}
 _FLAG_COLS = [c for c in _STATS_COLS if c not in _META_COLS]
 
 # (StreetAggregate property, values-dict key suffix) — mirrors
@@ -53,13 +55,15 @@ SELECT
     SUM(profit),
     SUM(CASE WHEN big_blind > 0 THEN profit / big_blind ELSE 0 END),
     SUM(CASE WHEN big_blind > 0 THEN 1 ELSE 0 END),
-    SUM(CASE WHEN big_blind > 0 THEN COALESCE(ev, profit) / big_blind ELSE 0 END)
+    SUM(CASE WHEN big_blind > 0 THEN COALESCE(ev, profit) / big_blind ELSE 0 END),
+    SUM(rake)
 FROM hand_player_stats
-WHERE player_name = ? AND played_at >= ? AND played_at < ?
+WHERE player_name = ? AND played_at >= ? AND played_at < ? AND session_type = 'cash'
 """
 
 
-def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None):
+def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
+                         site: str | None = None):
     """Returns (values, graph) matching compute_hero_overview's shape."""
     lo, hi = _date_bounds(d_from, d_to)
     params = [hero, lo, hi]
@@ -67,16 +71,23 @@ def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | No
     if stake:
         sql += " AND stakes_label = ?"
         params.append(stake)
+    if site:
+        sql += " AND source = ?"
+        params.append(site)
+    if should_gate_by_stakes():
+        sql += " AND big_blind <= ?"
+        params.append(FREE_TIER_MAX_CASH_BB)
 
     row = db.conn.execute(sql, params).fetchone()
     (hands, vpip_pfr_opp, vpip, pfr, three_bet, three_bet_opp, folded_to_3bet, faced_3bet_opp,
      four_bet, four_bet_opp, folded_to_4bet, faced_4bet_opp,
      saw_flop, reached_showdown, won_showdown, won_saw_flop,
-     total_profit, bb_sum, bb_hands, ev_bb_sum) = row
+     total_profit, bb_sum, bb_hands, ev_bb_sum, total_rake) = row
 
     values = {
         'hands': hands or 0,
         'profit': total_profit or 0.0,
+        'rake': total_rake or 0.0,
         'bb100': round(100.0 * bb_sum / bb_hands, 2) if bb_hands else None,
         'ev_bb100': round(100.0 * ev_bb_sum / bb_hands, 2) if bb_hands else None,
         'vpip': _pct(vpip, vpip_pfr_opp), 'pfr': _pct(pfr, vpip_pfr_opp),
@@ -86,12 +97,18 @@ def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | No
         'wsd': _pct(won_showdown, reached_showdown),
     }
 
-    graph_sql = ("SELECT profit, ev, reached_showdown, big_blind FROM hand_player_stats "
-                 "WHERE player_name = ? AND played_at >= ? AND played_at < ?")
+    graph_sql = ("SELECT profit, ev, reached_showdown, big_blind, rake FROM hand_player_stats "
+                 "WHERE player_name = ? AND played_at >= ? AND played_at < ? AND session_type = 'cash'")
     graph_params = [hero, lo, hi]
     if stake:
         graph_sql += " AND stakes_label = ?"
         graph_params.append(stake)
+    if site:
+        graph_sql += " AND source = ?"
+        graph_params.append(site)
+    if should_gate_by_stakes():
+        graph_sql += " AND big_blind <= ?"
+        graph_params.append(FREE_TIER_MAX_CASH_BB)
     graph_sql += " ORDER BY played_at"
 
     # BB-normalized lines are a SECOND running sum, not a rescale of the $
@@ -100,9 +117,15 @@ def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | No
     # correctly instead of one $1 hand and one $5 hand counting equally.
     xs, total, showdown, non_showdown, ev_line = [], [], [], [], []
     total_bb, showdown_bb, non_showdown_bb, ev_bb_line = [], [], [], []
+    # Raw cumulative rake, not yet scaled by the user's own rakeback % --
+    # that's a Settings-configured value the UI layer applies (same
+    # reasoning as the Rakeback stat card), not something this query
+    # layer should know about.
+    rake_line, rake_bb_line = [], []
     running_total = running_sd = running_nonsd = running_ev = 0.0
     running_total_bb = running_sd_bb = running_nonsd_bb = running_ev_bb = 0.0
-    for i, (profit, ev, reached_sd, big_blind) in enumerate(db.conn.execute(graph_sql, graph_params), 1):
+    running_rake = running_rake_bb = 0.0
+    for i, (profit, ev, reached_sd, big_blind, rake) in enumerate(db.conn.execute(graph_sql, graph_params), 1):
         ev_val = ev if ev is not None else profit
         bb = profit / big_blind if big_blind else 0.0
         ev_bb = ev_val / big_blind if big_blind else 0.0
@@ -110,6 +133,8 @@ def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | No
         running_ev += ev_val
         running_total_bb += bb
         running_ev_bb += ev_bb
+        running_rake += rake or 0.0
+        running_rake_bb += (rake or 0.0) / big_blind if big_blind else 0.0
         if reached_sd:
             running_sd += profit
             running_sd_bb += bb
@@ -125,11 +150,15 @@ def hero_overview_query(db, hero: str, d_from: date, d_to: date, stake: str | No
         showdown_bb.append(running_sd_bb)
         non_showdown_bb.append(running_nonsd_bb)
         ev_bb_line.append(running_ev_bb)
+        rake_line.append(running_rake)
+        rake_bb_line.append(running_rake_bb)
 
-    return values, (xs, total, showdown, non_showdown, ev_line, total_bb, showdown_bb, non_showdown_bb, ev_bb_line)
+    return values, (xs, total, showdown, non_showdown, ev_line, total_bb, showdown_bb, non_showdown_bb, ev_bb_line,
+                     rake_line, rake_bb_line)
 
 
-def sessions_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None):
+def sessions_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
+                    site: str | None = None):
     """One row per (calendar day, stakes) group hero played — matches
     poker_dashboard_legacy.py's calc_sessions() grouping exactly (a
     session is a date+stakes bucket, not a real time-gap-detected sitting,
@@ -145,11 +174,17 @@ def sessions_query(db, hero: str, d_from: date, d_to: date, stake: str | None = 
             SUM(CASE WHEN big_blind > 0 THEN 1 ELSE 0 END),
             MIN(played_at), MAX(played_at)
         FROM hand_player_stats
-        WHERE player_name = ? AND played_at >= ? AND played_at < ?
+        WHERE player_name = ? AND played_at >= ? AND played_at < ? AND session_type = 'cash'
     """
     if stake:
         sql += " AND stakes_label = ?"
         params.append(stake)
+    if site:
+        sql += " AND source = ?"
+        params.append(site)
+    if should_gate_by_stakes():
+        sql += " AND big_blind <= ?"
+        params.append(FREE_TIER_MAX_CASH_BB)
     sql += " GROUP BY date(played_at), stakes_label ORDER BY date(played_at) DESC, stakes_label DESC"
 
     rows = []
@@ -166,7 +201,8 @@ def sessions_query(db, hero: str, d_from: date, d_to: date, stake: str | None = 
 
 
 def pct_trend_query(db, hero: str, d_from: date, d_to: date, stat_ids: list[str],
-                      stake: str | None = None, interval_days: int = 7):
+                      stake: str | None = None, site: str | None = None, interval_days: int = 7,
+                      session_type: str | None = None):
     """One check-in point per `interval_days`-long slice of [d_from, d_to]
     — each slice's OWN rate for every stat in `stat_ids`, not a
     cumulative/running average, so a change made partway through the
@@ -189,6 +225,15 @@ def pct_trend_query(db, hero: str, d_from: date, d_to: date, stat_ids: list[str]
         if stake:
             where.append("stakes_label = ?")
             params.append(stake)
+        if site:
+            where.append("source = ?")
+            params.append(site)
+        if session_type:
+            where.append("session_type = ?")
+            params.append(session_type)
+        if session_type == 'cash' and should_gate_by_stakes():
+            where.append("big_blind <= ?")
+            params.append(FREE_TIER_MAX_CASH_BB)
         values, hand_count, _, _ = _villain_stats_from_where(db, " AND ".join(where), params)
 
         bucket_starts.append(cur.isoformat())
@@ -200,18 +245,25 @@ def pct_trend_query(db, hero: str, d_from: date, d_to: date, stat_ids: list[str]
     return bucket_starts, series, hand_counts
 
 
-def hands_for_session_query(db, hero: str, session_date: str, stakes_label: str | None):
+def hands_for_session_query(db, hero: str, session_date: str, stakes_label: str | None,
+                             site: str | None = None):
     """Every hand in one (date, stakes) session row from sessions_query —
     same (hand_id, played_at, stakes_label, profit, ev) shape
     hands_for_stat_query returns, so it drops straight into
     HandListDialog for the double-click-to-replay flow."""
-    where = ["player_name = ?", "date(played_at) = ?"]
+    where = ["player_name = ?", "date(played_at) = ?", "session_type = 'cash'"]
     params = [hero, session_date]
     if stakes_label is None:
         where.append("stakes_label IS NULL")
     else:
         where.append("stakes_label = ?")
         params.append(stakes_label)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     return db.conn.execute(
         f"SELECT hand_id, played_at, stakes_label, profit, ev FROM hand_player_stats "
         f"WHERE {' AND '.join(where)} ORDER BY played_at",
@@ -230,18 +282,28 @@ WHERE played_at >= ? AND played_at < ? AND player_name != ?
 """
 
 
-def population_summary_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None):
+def population_summary_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
+                              site: str | None = None, session_type: str | None = None):
     lo, hi = _date_bounds(d_from, d_to)
     params = [lo, hi, hero]
     sql = _POPULATION_SQL
     if stake:
         sql += " AND stakes_label = ?"
         params.append(stake)
+    if site:
+        sql += " AND source = ?"
+        params.append(site)
+    if session_type:
+        sql += " AND session_type = ?"
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        sql += " AND big_blind <= ?"
+        params.append(FREE_TIER_MAX_CASH_BB)
     sql += " GROUP BY player_name"
 
     result: dict[str, PopulationRow] = {}
     for (name, hands, vpip_pfr_opp, vpip, pfr, tb, tb_opp, f3b, f3b_opp, saw_flop, rsd, wsf, total_profit) in db.conn.execute(sql, params):
-        if ANON_PLACEHOLDER.match(name):
+        if is_anon_placeholder(name):
             continue
         row = PopulationRow(name)
         row.hands = hands
@@ -256,7 +318,8 @@ def population_summary_query(db, hero: str, d_from: date, d_to: date, stake: str
     return result
 
 
-def hero_vpip_sequence_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None):
+def hero_vpip_sequence_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
+                              site: str | None = None):
     """(played_at, profit, big_blind, vpip, vpip_pfr_opp) for every one of
     hero's hands in the period, ordered by played_at — the backing data
     for core.tilt_correlation, which needs to walk hands in sequence to
@@ -265,18 +328,28 @@ def hero_vpip_sequence_query(db, hero: str, d_from: date, d_to: date, stake: str
     shape would extend to another stat by selecting its own made/
     opportunity columns instead."""
     lo, hi = _date_bounds(d_from, d_to)
-    where = ["player_name = ?", "played_at >= ?", "played_at < ?"]
+    # Tilt correlation is inherently a $-profit concept (VPIP after a big
+    # $ LOSS) -- a tournament hand's chip swings aren't real money, so
+    # this stays cash-only the same way Overview/Sessions do, not a
+    # user-facing toggle.
+    where = ["player_name = ?", "played_at >= ?", "played_at < ?", "session_type = 'cash'"]
     params = [hero, lo, hi]
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     sql = (f"SELECT played_at, profit, big_blind, vpip, vpip_pfr_opp FROM hand_player_stats "
            f"WHERE {' AND '.join(where)} ORDER BY played_at")
     return db.conn.execute(sql, params).fetchall()
 
 
 def showdown_hand_ids_query(db, hero: str, d_from: date, d_to: date, stake: str | None = None,
-                              limit: int | None = 5000) -> list[str]:
+                              site: str | None = None, limit: int | None = 5000) -> list[str]:
     """Hand ids where some player OTHER than hero reached showdown — the
     cheap pre-filter for core.river_sizing.classify_river_sizing_vs_strength,
     which needs full Hand objects (raw actions, hole cards) that only
@@ -295,6 +368,9 @@ def showdown_hand_ids_query(db, hero: str, d_from: date, d_to: date, stake: str 
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
     sql = f"SELECT DISTINCT hand_id FROM hand_player_stats WHERE {' AND '.join(where)}"
     if limit is not None:
         sql += " LIMIT ?"
@@ -302,24 +378,80 @@ def showdown_hand_ids_query(db, hero: str, d_from: date, d_to: date, stake: str 
     return [r[0] for r in db.conn.execute(sql, params)]
 
 
-def available_stakes_query(db, hero: str, d_from: date, d_to: date) -> list[str]:
+def available_stakes_query(db, hero: str, d_from: date, d_to: date, site: str | None = None,
+                             session_type: str | None = None) -> list[str]:
+    """`session_type` naturally comes back empty for 'tournament' — a
+    tournament's blind LEVEL isn't a cash "stake" and its stakes_label is
+    always NULL (see database/hand_stats_builder.py), so the global $/T
+    toggle's Tournament mode needs no special-casing here, just the
+    filter."""
     lo, hi = _date_bounds(d_from, d_to)
-    rows = db.conn.execute(
-        "SELECT DISTINCT stakes_label, big_blind FROM hand_player_stats "
-        "WHERE player_name = ? AND played_at >= ? AND played_at < ?",
-        [hero, lo, hi]).fetchall()
+    sql = ("SELECT DISTINCT stakes_label, big_blind FROM hand_player_stats "
+           "WHERE player_name = ? AND played_at >= ? AND played_at < ?")
+    params = [hero, lo, hi]
+    if site:
+        sql += " AND source = ?"
+        params.append(site)
+    if session_type:
+        sql += " AND session_type = ?"
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        sql += " AND big_blind <= ?"
+        params.append(FREE_TIER_MAX_CASH_BB)
+    rows = db.conn.execute(sql, params).fetchall()
     seen = {label: (bb or 0) for label, bb in rows if label}
     return [label for label, _ in sorted(seen.items(), key=lambda kv: kv[1])]
 
 
+def available_sites_query(db, hero: str, d_from: date, d_to: date) -> list[str]:
+    """Distinct internal source values (e.g. "ipoker", "ggpoker") hero
+    actually has hands from within [d_from, d_to] — the Site dropdown's
+    options, mapped to friendly labels by ui/sites.py."""
+    lo, hi = _date_bounds(d_from, d_to)
+    rows = db.conn.execute(
+        "SELECT DISTINCT source FROM hand_player_stats "
+        "WHERE player_name = ? AND played_at >= ? AND played_at < ?",
+        [hero, lo, hi]).fetchall()
+    return sorted(source for (source,) in rows if source)
+
+
+def hero_hand_sources_query(db, hero: str, d_from: date, d_to: date,
+                             stake: str | None = None, site: str | None = None) -> dict[str, int]:
+    """{source: hand_count} for hero's own hands matching the given
+    period/stake/site filter — used to explain an otherwise-mysterious
+    empty Population tab: a hand count > 0 with zero villains almost
+    always means every one of those hands came from a source that
+    anonymizes opponents (GGPoker), not that something's broken. A total
+    of 0 means the filter itself matches no hands at all."""
+    lo, hi = _date_bounds(d_from, d_to)
+    where = ["player_name = ?", "played_at >= ?", "played_at < ?"]
+    params = [hero, lo, hi]
+    if stake:
+        where.append("stakes_label = ?")
+        params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    where_sql = " AND ".join(where)
+    rows = db.conn.execute(
+        f"SELECT source, COUNT(*) FROM hand_player_stats WHERE {where_sql} GROUP BY source",
+        params).fetchall()
+    return {source: count for source, count in rows}
+
+
 def villain_stats_query(db, player_name: str, d_from: date | None = None, d_to: date | None = None,
-                          stake: str | None = None):
+                          stake: str | None = None, site: str | None = None,
+                          session_type: str | None = None):
     """Returns (values, hand_count, vs_open, opp_counts) matching
     compute_all_stats's shape exactly — vs_open is always {} since that
     section was removed from the villain profile display and was never
     wired into the database (see ui/main_window.py's _render_villain).
     opp_counts is the opportunity-count denominator behind each
-    percentage in `values`, for sample-size display."""
+    percentage in `values`, for sample-size display. `session_type`
+    ('cash'/'tournament') is None by default — unlike Overview/Sessions,
+    the Stats/Population tabs' own local Cash/Tournament/All toggle
+    controls this explicitly, since VPIP/PFR/etc. are action-based and
+    equally valid for either."""
     where = ["player_name = ?"]
     params = [player_name]
     if d_from and d_to:
@@ -329,11 +461,21 @@ def villain_stats_query(db, player_name: str, d_from: date | None = None, d_to: 
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if session_type:
+        where.append("session_type = ?")
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     return _villain_stats_from_where(db, " AND ".join(where), params)
 
 
 def position_breakdown_query(db, player_name: str, d_from: date | None = None, d_to: date | None = None,
-                               stake: str | None = None):
+                               stake: str | None = None, site: str | None = None,
+                               session_type: str | None = None):
     """Per-position breakdown for the Stats tab — same "first pass" stat
     set as villain_stats_query, computed once per position rather than as
     a new hand-rolled aggregation, so every number is produced by the
@@ -358,6 +500,15 @@ def position_breakdown_query(db, player_name: str, d_from: date | None = None, d
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if session_type:
+        where.append("session_type = ?")
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     base_where = " AND ".join(where)
 
     raw_positions = {r[0] for r in db.conn.execute(
@@ -378,7 +529,8 @@ def position_breakdown_query(db, player_name: str, d_from: date | None = None, d
 
 
 def population_by_position_query(db, hero: str, d_from: date | None = None, d_to: date | None = None,
-                                   stake: str | None = None):
+                                   stake: str | None = None, site: str | None = None,
+                                   session_type: str | None = None):
     """Same shape and same underlying formula as position_breakdown_query,
     but pooled across every OTHER player instead of hero — lets a leak
     search compare "your 3-bet% from the CO" against "the pool's 3-bet%
@@ -397,6 +549,15 @@ def population_by_position_query(db, hero: str, d_from: date | None = None, d_to
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if session_type:
+        where.append("session_type = ?")
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     base_where = " AND ".join(where)
 
     raw_positions = {r[0] for r in db.conn.execute(
@@ -417,7 +578,8 @@ def population_by_position_query(db, hero: str, d_from: date | None = None, d_to
 
 
 def villain_group_stats_query(db, names: list[str], d_from: date | None = None, d_to: date | None = None,
-                                stake: str | None = None):
+                                stake: str | None = None, site: str | None = None,
+                                session_type: str | None = None):
     """Same shape as villain_stats_query, but pooled across a GROUP of
     villains (e.g. everyone currently tagged "Fish") — summed raw counts
     across every one of them, not an average of each villain's own
@@ -435,6 +597,15 @@ def villain_group_stats_query(db, names: list[str], d_from: date | None = None, 
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if session_type:
+        where.append("session_type = ?")
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     return _villain_stats_from_where(db, " AND ".join(where), params)
 
 
@@ -473,11 +644,20 @@ def _villain_stats_from_where(db, where_sql: str, params: list):
         "vpip": _pct(f['vpip'], f['vpip_pfr_opp']), "pfr": _pct(f['pfr'], f['vpip_pfr_opp']),
         "three_bet": _pct(f['three_bet'], f['three_bet_opp']),
         "fold_3bet": _pct(f['folded_to_3bet'], f['faced_3bet_opp']),
+        # Narrower population than the plain "fold_3bet" above (see
+        # PlayerHandFlags.faced_3bet_as_raiser_opp) — not shown as its own
+        # column anywhere, only used to gate/illustrate the "Over-folds to
+        # 3-Bets" exploit/leak so it doesn't lump in a player's cold folds
+        # to someone else's already-raised pot with how they react when
+        # THEIR OWN open gets re-raised.
+        "fold_3bet_as_raiser": _pct(f['folded_to_3bet_as_raiser'], f['faced_3bet_as_raiser_opp']),
         "four_bet": _pct(f['four_bet'], f['four_bet_opp']),
         "fold_4bet": _pct(f['folded_to_4bet'], f['faced_4bet_opp']),
         "squeeze": _pct(f['squeeze'], f['squeeze_opp']),
         "raise_vs_squeeze": _pct(f['raised_vs_squeeze'], f['squeeze_def_opp']),
         "fold_to_squeeze": _pct(f['folded_to_squeeze'], f['squeeze_def_opp']),
+        "limp": _pct(f['limp'], f['limp_opp']),
+        "limp_call": _pct(f['limp_call'], f['limp_call_opp']),
         "steal_att": _pct(f['steal_att'], f['steal_opp']),
         "steal_success": _pct(f['steal_success'], f['steal_att']),
         "fold_to_steal": _pct(f['folded_to_steal'], f['blind_def_opp']),
@@ -504,9 +684,11 @@ def _villain_stats_from_where(db, where_sql: str, params: list):
     opp_counts = {
         "vpip": f['vpip_pfr_opp'], "pfr": f['vpip_pfr_opp'],
         "three_bet": f['three_bet_opp'], "fold_3bet": f['faced_3bet_opp'],
+        "fold_3bet_as_raiser": f['faced_3bet_as_raiser_opp'],
         "four_bet": f['four_bet_opp'], "fold_4bet": f['faced_4bet_opp'],
         "squeeze": f['squeeze_opp'], "raise_vs_squeeze": f['squeeze_def_opp'],
         "fold_to_squeeze": f['squeeze_def_opp'],
+        "limp": f['limp_opp'], "limp_call": f['limp_call_opp'],
         "steal_att": f['steal_opp'], "steal_success": f['steal_att'],
         "fold_to_steal": f['blind_def_opp'],
         "wtsd": f['saw_flop'], "wsd": f['reached_showdown'], "wwsf": f['saw_flop'],
@@ -533,12 +715,19 @@ def villain_graph_query(db, hero: str, villain: str, d_from: date | None = None,
     villain" already means "hands where hero and villain both played" —
     no extra join needed, just two independently-filtered fetches over
     the same date range."""
-    where = ["player_name = ?"]
+    # A shared villain (real, persistent username sites only -- anonymizing
+    # sources never reach hand_player_stats at all) could now have both
+    # cash and tournament rows; this graph is $-profit, so cash-only, same
+    # reasoning as Overview/Sessions.
+    where = ["player_name = ?", "session_type = 'cash'"]
     params = [villain]
     if d_from and d_to:
         lo, hi = _date_bounds(d_from, d_to)
         where += ["played_at >= ?", "played_at < ?"]
         params += [lo, hi]
+    if should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     return _villain_graph_from_where(db, hero, " AND ".join(where), params)
 
 
@@ -553,12 +742,15 @@ def villain_group_graph_query(db, hero: str, names: list[str], d_from: date | No
     if not names:
         return ([], [], [], [], [], [], [], [], [], [], []), 0.0, 0.0
     placeholders = ",".join("?" for _ in names)
-    where = [f"player_name IN ({placeholders})"]
+    where = [f"player_name IN ({placeholders})", "session_type = 'cash'"]
     params = list(names)
     if d_from and d_to:
         lo, hi = _date_bounds(d_from, d_to)
         where += ["played_at >= ?", "played_at < ?"]
         params += [lo, hi]
+    if should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     return _villain_graph_from_where(db, hero, " AND ".join(where), params)
 
 
@@ -647,6 +839,8 @@ STAT_COLUMN_CONDITIONS = {
     'squeeze': 'squeeze = 1',
     'raise_vs_squeeze': 'raised_vs_squeeze = 1',
     'fold_to_squeeze': 'folded_to_squeeze = 1',
+    'limp': 'limp = 1',
+    'limp_call': 'limp_call = 1',
     'fold_to_steal': 'folded_to_steal = 1',
     'wtsd': 'reached_showdown = 1',
     'wwsf': 'saw_flop = 1 AND won_hand = 1',
@@ -671,8 +865,13 @@ LEAK_HAND_CONDITIONS = {
     'vpip_tight': 'vpip = 0 AND vpip_pfr_opp = 1',
     'limping': 'vpip = 1 AND pfr = 0',
     'three_bet_low': 'three_bet_opp = 1 AND three_bet = 0',
-    'fold_3bet_high': 'folded_to_3bet = 1',
-    'fold_3bet_good': 'faced_3bet_opp = 1',
+    # Narrower than the plain fold_3bet columns (see
+    # PlayerHandFlags.faced_3bet_as_raiser_opp): restricted to hands where
+    # this player made the open and got re-raised, so every hand shown
+    # actually illustrates "3-bet them and they'll fold" rather than
+    # mixing in cold folds to someone else's already-raised pot.
+    'fold_3bet_high': 'folded_to_3bet_as_raiser = 1',
+    'fold_3bet_good': 'faced_3bet_as_raiser_opp = 1',
     'four_bet_high': 'four_bet = 1',
     'fold_4bet_high': 'folded_to_4bet = 1',
     'fold_steal_high': 'folded_to_steal = 1',
@@ -686,7 +885,8 @@ LEAK_HAND_CONDITIONS = {
 
 def hands_for_stat_query(db, player_name: str, stat_id: str,
                            d_from: date | None = None, d_to: date | None = None, stake: str | None = None,
-                           position: str | None = None):
+                           position: str | None = None, site: str | None = None,
+                           session_type: str | None = None):
     """Returns (hand_id, played_at, stakes_label, profit, ev) tuples for
     every hand where `player_name` "made" `stat_id` — the backing data for
     the hand-list dialog. The full hand (for replay, and for the rest of
@@ -697,11 +897,12 @@ def hands_for_stat_query(db, player_name: str, stat_id: str,
     condition = STAT_COLUMN_CONDITIONS.get(stat_id)
     if condition is None:
         return []
-    return _hands_matching(db, player_name, condition, d_from, d_to, stake, position)
+    return _hands_matching(db, player_name, condition, d_from, d_to, stake, position, site, session_type)
 
 
 def hands_for_leak_query(db, player_name: str, leak_id: str,
-                           d_from: date | None = None, d_to: date | None = None, stake: str | None = None):
+                           d_from: date | None = None, d_to: date | None = None, stake: str | None = None,
+                           site: str | None = None, session_type: str | None = None):
     """Same shape as hands_for_stat_query, but keyed by a leak_id from
     ui/player_classify.generate_hero_leaks (LEAK_HAND_CONDITIONS above) —
     the illustrative hand set for a leak isn't always the same condition
@@ -709,21 +910,23 @@ def hands_for_leak_query(db, player_name: str, leak_id: str,
     condition = LEAK_HAND_CONDITIONS.get(leak_id)
     if condition is None:
         return []
-    return _hands_matching(db, player_name, condition, d_from, d_to, stake)
+    return _hands_matching(db, player_name, condition, d_from, d_to, stake, site=site, session_type=session_type)
 
 
 def hands_for_position_query(db, player_name: str, position: str | None,
-                               d_from: date | None = None, d_to: date | None = None, stake: str | None = None):
+                               d_from: date | None = None, d_to: date | None = None, stake: str | None = None,
+                               site: str | None = None, session_type: str | None = None):
     """Same shape as hands_for_stat_query, but with no stat condition at
     all — every hand `player_name` played from `position` (or every hand
     in the period if `position` is None, matching the By Position table's
     'ALL' row)."""
-    return _hands_matching(db, player_name, "1=1", d_from, d_to, stake, position)
+    return _hands_matching(db, player_name, "1=1", d_from, d_to, stake, position, site, session_type)
 
 
 def _hands_matching(db, player_name: str, condition: str,
                       d_from: date | None, d_to: date | None, stake: str | None,
-                      position: str | None = None):
+                      position: str | None = None, site: str | None = None,
+                      session_type: str | None = None):
     where = ["player_name = ?", condition]
     params = [player_name]
     if d_from and d_to:
@@ -733,6 +936,15 @@ def _hands_matching(db, player_name: str, condition: str,
     if stake:
         where.append("stakes_label = ?")
         params.append(stake)
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    if session_type:
+        where.append("session_type = ?")
+        params.append(session_type)
+    if session_type == 'cash' and should_gate_by_stakes():
+        where.append("big_blind <= ?")
+        params.append(FREE_TIER_MAX_CASH_BB)
     if position:
         if position == 'SB':
             where.append("position IN ('SB', 'BTN/SB')")
@@ -743,3 +955,59 @@ def _hands_matching(db, player_name: str, condition: str,
     return db.conn.execute(
         f"SELECT hand_id, played_at, stakes_label, profit, ev FROM hand_player_stats WHERE {where_sql}",
         params).fetchall()
+
+
+def tournament_list_query(db, hero: str, d_from: date | None = None, d_to: date | None = None,
+                            site: str | None = None) -> list[dict]:
+    """One row per distinct tournament hero played in the period —
+    buy-in/fee/source/hand-count/first-and-last-played-at parsed straight
+    from the hands themselves, enriched with whatever manually-logged
+    result exists (finish_position/field_size/payout/currency, all None
+    if not yet logged — no hand-history export contains this, see
+    database/schema.sql's tournament_results table). Row count is small
+    (hundreds, not hundreds-of-thousands), so ROI/ITM/avg-finish
+    aggregation happens in Python over this list (ui/tournaments_tab.py)
+    rather than in SQL the way the hand-level queries above do."""
+    where = ["player_name = ?", "session_type = 'tournament'"]
+    params = [hero]
+    if d_from and d_to:
+        lo, hi = _date_bounds(d_from, d_to)
+        where += ["played_at >= ?", "played_at < ?"]
+        params += [lo, hi]
+    if site:
+        where.append("source = ?")
+        params.append(site)
+    where_sql = " AND ".join(where)
+    rows = db.conn.execute(
+        f"SELECT tournament_id, source, MIN(played_at), MAX(played_at), COUNT(*) "
+        f"FROM hand_player_stats WHERE {where_sql} GROUP BY tournament_id",
+        params).fetchall()
+
+    tournament_ids = [r[0] for r in rows]
+    buyins: dict[str, tuple] = {}
+    if tournament_ids:
+        placeholders = ",".join("?" for _ in tournament_ids)
+        for tid, buy_in, fee in db.conn.execute(
+                f"SELECT tournament_id, buy_in, fee FROM hands WHERE tournament_id IN ({placeholders}) "
+                f"GROUP BY tournament_id", tournament_ids):
+            buyins[tid] = (buy_in, fee)
+
+    logged_results = db.get_tournament_results()
+    out = []
+    for tid, source, first_played, last_played, hand_count in rows:
+        buy_in, fee = buyins.get(tid, (None, None))
+        # An unknown buy-in (never happens with a real hand-history export,
+        # but defensively) isn't proven to exceed the free tier, so it
+        # isn't excluded -- only a buy-in we can actually see above the
+        # threshold is gated, matching this project's "never guess" rule.
+        if should_gate_by_stakes() and buy_in is not None and buy_in > FREE_TIER_MAX_TOURNEY_BUYIN:
+            continue
+        finish_position, field_size, payout, currency = logged_results.get(tid, (None, None, None, None))
+        out.append({
+            'tournament_id': tid, 'source': source, 'buy_in': buy_in, 'fee': fee,
+            'hand_count': hand_count, 'first_played_at': first_played, 'last_played_at': last_played,
+            'finish_position': finish_position, 'field_size': field_size, 'payout': payout,
+            'currency': currency,
+        })
+    out.sort(key=lambda r: r['last_played_at'] or '', reverse=True)
+    return out

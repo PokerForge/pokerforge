@@ -14,5 +14,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# server/ (license webhook service) — real secrets and the local ledger of
+# issued keys/customer emails never belong in the repo.
+server/.env
+server/licenses.db
+
 # Claude Code session-local files, not project source.
 .claude/

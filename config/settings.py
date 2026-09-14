@@ -13,11 +13,15 @@ _DEFAULTS = {
     "hero_name": None,
     "currency_symbol": None,
     "position_table_stat_ids": None,
+    "overall_stat_ids": None,
+    "rakeback_pct": None,
     "trend_stat_ids": None,
     "trend_interval_days": 14,
     "hand_history_dirs": [],
     "last_seen_version": None,
     "license_key": None,
+    "license_expires_at": None,
+    "license_last_checked_at": None,
     "live_auto_refresh_enabled": True,
     "last_auto_backup_date": None,
 }
@@ -60,6 +64,15 @@ def add_hero_alias(name: str):
     save_settings(settings)
 
 
+def set_hero_aliases(names: list[str]):
+    """Bulk replace, for SettingsDialog's alias editor — saves the whole
+    list once on Save rather than one call per add/remove edit made
+    while the dialog was open."""
+    settings = load_settings()
+    settings["hero_aliases"] = sorted(set(names))
+    save_settings(settings)
+
+
 def get_hero_name() -> str | None:
     """The hero identity, detected once (whichever name appears in the
     most hands) and persisted here — incremental startup only parses new
@@ -97,6 +110,34 @@ def get_position_table_stat_ids() -> list[str] | None:
 def set_position_table_stat_ids(stat_ids: list[str]):
     settings = load_settings()
     settings["position_table_stat_ids"] = stat_ids
+    save_settings(settings)
+
+
+def get_overall_stat_ids() -> list[str] | None:
+    """Which STAT_REGISTRY stat ids to show as cards on the Stats tab's
+    Overall tab (across its Overall/Preflop/Flop/Turn/River categories) —
+    None means "show all of them" (the built-in default, matching this
+    tab's behavior before it was made customizable), only set once the
+    user customizes it via the Customise button."""
+    return load_settings().get("overall_stat_ids")
+
+
+def set_overall_stat_ids(stat_ids: list[str]):
+    settings = load_settings()
+    settings["overall_stat_ids"] = stat_ids
+    save_settings(settings)
+
+
+def get_rakeback_pct() -> float | None:
+    """The user's own rakeback deal, as a percentage (e.g. 30 for 30%) —
+    None means not configured, in which case the Overview tab's Rakeback
+    stat card shows "—" rather than a misleading $0.00."""
+    return load_settings().get("rakeback_pct")
+
+
+def set_rakeback_pct(pct: float | None):
+    settings = load_settings()
+    settings["rakeback_pct"] = pct
     save_settings(settings)
 
 
@@ -159,6 +200,34 @@ def get_license_key() -> str | None:
 def set_license_key(key: str | None):
     settings = load_settings()
     settings["license_key"] = key
+    save_settings(settings)
+
+
+def get_license_expires_at() -> str | None:
+    """See core/licensing.py::refresh_license_status — the subscription's
+    paid-through date (ISO, YYYY-MM-DD) as of the last successful check
+    against the license server, or a provisional value set the moment a
+    key is first entered (core/licensing.py::activate_key). None means
+    never checked and no key entered yet."""
+    return load_settings().get("license_expires_at")
+
+
+def set_license_expires_at(expires_at: str | None):
+    settings = load_settings()
+    settings["license_expires_at"] = expires_at
+    save_settings(settings)
+
+
+def get_license_last_checked_at() -> str | None:
+    """ISO date this profile last successfully reached the license server
+    — informational only (not itself part of the licensing decision, see
+    core/licensing.py::is_licensed)."""
+    return load_settings().get("license_last_checked_at")
+
+
+def set_license_last_checked_at(checked_at: str | None):
+    settings = load_settings()
+    settings["license_last_checked_at"] = checked_at
     save_settings(settings)
 
 

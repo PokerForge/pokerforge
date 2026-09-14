@@ -46,12 +46,15 @@ from ui.overview_tab import OverviewTab
 from ui.sessions_tab import SessionsTab
 from ui.stats_tab import StatsTab
 from ui.population_tab import PopulationTab
+from ui.game_type_toggle import GameTypeToggle
 from ui.async_worker import AsyncRunner
 from ui.hero_detect import detect_hero, normalize_hero_aliases, dominant_currency, hero_hand_share
 from ui.hand_history_dirs_dialog import HandHistoryDirsDialog
 from ui.hero_setup_dialog import HeroSetupDialog
 from ui.profile_dialog import ProfileDialog, restart_app
 from ui.settings_dialog import SettingsDialog
+from ui.license_dialog import LicenseDialog
+from core.licensing import activate_key, refresh_license_status
 from ui.getting_started_dialog import GettingStartedDialog
 from ui.app_tour import TourOverlay
 from ui.diagnostics_dialog import DiagnosticsDialog
@@ -61,14 +64,18 @@ from ui.live_watcher import LiveFolderWatcher
 from config.profiles import get_active_display_name
 from core.currency import convert_hands_to_usd
 from database.repository import PokerDatabase
-from database.queries import available_stakes_query
+from database.queries import available_stakes_query, available_sites_query
+from ui.sites import site_label, site_value
 from config.settings import (
     get_hero_name, set_hero_name, get_currency_symbol, set_currency_symbol,
     get_hand_history_dirs, set_hand_history_dirs,
     get_last_seen_version, set_last_seen_version,
     get_live_auto_refresh_enabled,
     get_last_auto_backup_date, set_last_auto_backup_date,
+    get_hero_aliases, add_hero_alias,
+    get_license_key, set_license_key,
 )
+from core.ggpoker_hand_parser import GGPOKER_HERO_LABEL
 
 DB_PATH = profile_data_dir() / "sf_poker.db"
 logger = logging.getLogger(__name__)
@@ -141,6 +148,12 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.currency = currency
         self._custom_range = None
         self._last_period_text = "This Month"
+        # (path, message) pairs already surfaced this session by the live
+        # watcher/Refresh path — see _notify_ongoing_scan_errors. A file
+        # that keeps failing to parse never gets its fingerprint marked
+        # imported, so without this it would re-trigger the same warning
+        # on every single poll/click instead of just once.
+        self._warned_scan_errors: set[tuple[str, str]] = set()
         active_profile = get_active_display_name()
         # Only clutters the title once multi-profile is actually in use —
         # a single-profile install looks exactly as it always has.
@@ -158,11 +171,24 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         # Header — the banner artwork already has its own "SF POKER" logo,
         # so this row just overlays the one piece of real data it can't
-        # bake in: hero + how many hands are loaded.
-        header = HeaderBanner()
+        # bake in: hero + how many hands are loaded. The banner is made
+        # tall enough to also run behind the filter bar below it (rather
+        # than the filter bar sitting on its own flat strip), with the
+        # controls down there floating on the felt pattern the same way
+        # e.g. Linear/Notion run a toolbar over a hero band — see
+        # ui/header_banner.py for the fade that keeps that legible.
+        _FILTER_BAR_HEIGHT = 52
+        header = HeaderBanner(top_height=60)
         self.header = header
-        header.setFixedHeight(60)
-        hl = QHBoxLayout(header)
+        header.setFixedHeight(60 + _FILTER_BAR_HEIGHT)
+        header_lay = QVBoxLayout(header)
+        header_lay.setContentsMargins(0, 0, 0, 0)
+        header_lay.setSpacing(0)
+
+        top_row = QWidget()
+        top_row.setStyleSheet("background: transparent;")
+        top_row.setFixedHeight(60)
+        hl = QHBoxLayout(top_row)
         hl.setContentsMargins(24, 0, 24, 0)
         hl.addStretch()
         self.folder_warning_lbl = lbl("", size=12, color="#f85149")
@@ -170,15 +196,20 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.folder_warning_lbl.hide()
         hl.addWidget(self.folder_warning_lbl)
         hl.addSpacing(12)
-        self.header_hands_lbl = lbl(f"Hero: {hero}  |  {db.hand_count():,} hands loaded", size=12, color="white")
+        # Placeholder — matches the toggle's default ('cash'); corrected
+        # for real once _apply_filters runs below via _on_period_changed.
+        self.header_hands_lbl = lbl(f"Hero: {hero}  |  {db.hand_count(session_type='cash'):,} hands loaded", size=12, color="white")
         hl.addWidget(self.header_hands_lbl)
-        main_lay.addWidget(header)
+        header_lay.addWidget(top_row)
 
-        # Filter bar
-        fbar = QFrame()
+        # Filter bar — floats transparently over the banner's bottom fade
+        # instead of its own opaque strip (a plain QWidget/QFrame would
+        # otherwise paint the global stylesheet's flat background and hide
+        # the banner underneath, hence the explicit transparent style).
+        fbar = QWidget()
         self.filter_bar = fbar
-        fbar.setStyleSheet(f"background:{BG};border-bottom:1px solid {BORDER};")
-        fbar.setFixedHeight(52)
+        fbar.setStyleSheet("background: transparent;")
+        fbar.setFixedHeight(_FILTER_BAR_HEIGHT)
         fl = QHBoxLayout(fbar)
         fl.setContentsMargins(24, 0, 24, 0)
         fl.setSpacing(12)
@@ -198,6 +229,21 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.stakes_cb.addItem("All Stakes")
         self.stakes_cb.currentTextChanged.connect(self._apply_filters)
         fl.addWidget(self.stakes_cb)
+        fl.addSpacing(8)
+        fl.addWidget(lbl("Site", dim=True))
+        self.site_cb = QComboBox()
+        self.site_cb.addItem("All Sites")
+        self.site_cb.currentTextChanged.connect(self._on_site_changed)
+        fl.addWidget(self.site_cb)
+        fl.addSpacing(8)
+        # Global Cash/Tournament switch — Overview/Sessions/Stats/Population
+        # all show different content depending on this, not a separate
+        # Tournaments tab (see ui/game_type_toggle.py for why). Labeled like
+        # every other filter here so it doesn't read as a stray switch.
+        fl.addWidget(lbl("Game", dim=True))
+        self.game_type_toggle = GameTypeToggle()
+        self.game_type_toggle.changed.connect(self._on_game_type_changed)
+        fl.addWidget(self.game_type_toggle)
         fl.addStretch()
         self.info_lbl = lbl("", dim=True)
         fl.addWidget(self.info_lbl)
@@ -213,7 +259,8 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.refresh_btn.setToolTip("Refresh (Ctrl+R)")
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         fl.addWidget(self.refresh_btn)
-        main_lay.addWidget(fbar)
+        header_lay.addWidget(fbar)
+        main_lay.addWidget(header)
 
         # Tabs
         self.tabs = QTabWidget()
@@ -262,6 +309,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         self._update_folder_warning()
         self._update_no_hands_banner()
         self._on_period_changed()
+        self._maybe_refresh_license_status()
 
     def _apply_live_watch_setting(self):
         """(Re)syncs the live folder watcher with the current setting and
@@ -285,13 +333,13 @@ class AppWindow(QMainWindow, AsyncRunner):
         whether it's 1 or 10 hands (dominated by fixed multiprocessing
         pool startup cost), so a brief main-thread pause here is an
         acceptable trade for not risking a corrupted database."""
-        new_count = _import_new_hands(self, self.db, self.hero, dialog_threshold=15)
+        new_count, errors = _import_new_hands(self, self.db, self.hero, dialog_threshold=15)
         self._apply_live_watch_setting()  # picks up any new files/subfolders that appeared
         if new_count:
-            self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
             self._update_folder_warning()
             self._update_no_hands_banner()
             self._apply_filters()
+        _notify_ongoing_scan_errors(errors, self._warned_scan_errors)
 
     def _update_folder_warning(self):
         missing = missing_configured_folders(get_hand_history_dirs())
@@ -306,9 +354,10 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.no_hands_banner.setVisible(self.db.hand_count() == 0)
 
     def _on_period_changed(self):
-        """Period changed — the set of stakes worth offering depends on the
-        period (no point listing a stake from 2019 while viewing "This
-        Month"), so rebuild the dropdown before re-filtering the tabs.
+        """Period changed — the set of sites (and, once that's back, the
+        set of stakes) worth offering depends on the period (no point
+        listing a stake — or a site — from 2019 while viewing "This
+        Month"), so rebuild both dropdowns before re-filtering the tabs.
         Runs off the UI thread like everything else that touches the
         database — this one's fast (well under a second even at "All
         Time"), but there's no reason for any DB call to block painting."""
@@ -327,14 +376,55 @@ class AppWindow(QMainWindow, AsyncRunner):
 
         d_from, d_to = self._current_date_range()
         self.run_async(
-            lambda: available_stakes_query(self.db, self.hero, d_from, d_to),
-            self._on_stakes_loaded,
+            lambda: available_sites_query(self.db, self.hero, d_from, d_to),
+            self._on_sites_loaded,
         )
 
     def _current_date_range(self):
         if self.period_cb.currentText() == CUSTOM_RANGE_LABEL and self._custom_range:
             return self._custom_range
         return date_range(self.period_cb.currentText())
+
+    def _current_site(self):
+        text = self.site_cb.currentText()
+        return None if text in ("", "All Sites") else site_value(text)
+
+    def _current_game_type(self) -> str:
+        return self.game_type_toggle.value()
+
+    def _on_game_type_changed(self, _value):
+        # Stakes never apply to tournament hands (their `stakes_label` is
+        # always NULL — see database/hand_stats_builder.py), so reloading
+        # the Stakes dropdown for the new game type naturally comes back
+        # empty in Tournament mode, no special-casing needed here.
+        self._reload_stakes()
+
+    def _on_sites_loaded(self, sources):
+        prev = self.site_cb.currentText()
+        self.site_cb.blockSignals(True)
+        self.site_cb.clear()
+        self.site_cb.addItem("All Sites")
+        self.site_cb.addItems(site_label(s) for s in sources)
+        idx = self.site_cb.findText(prev)
+        self.site_cb.setCurrentIndex(idx if idx >= 0 else 0)
+        self.site_cb.blockSignals(False)
+        self._reload_stakes()
+
+    def _on_site_changed(self, _text=None):
+        self._reload_stakes()
+
+    def _reload_stakes(self):
+        """The set of stakes worth offering also depends on which site is
+        selected (no point listing a GGPoker-only stake while "iPoker" is
+        picked) — reloaded on both a period change and a site change,
+        with _apply_filters running only once that's settled."""
+        d_from, d_to = self._current_date_range()
+        site = self._current_site()
+        game_type = self._current_game_type()
+        self.run_async(
+            lambda: available_stakes_query(self.db, self.hero, d_from, d_to, site, game_type),
+            self._on_stakes_loaded,
+        )
 
     def _on_stakes_loaded(self, stakes):
         prev = self.stakes_cb.currentText()
@@ -347,15 +437,26 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.stakes_cb.blockSignals(False)
         self._apply_filters()
 
+    def _update_header_hands_label(self, game_type: str):
+        # Scoped to the current $/T mode — otherwise this always shows the
+        # combined cash+tournament total, which reads as wrong while
+        # looking at (say) Tournament mode with only a handful of
+        # tournaments logged.
+        count = self.db.hand_count(session_type=game_type)
+        self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {count:,} hands loaded")
+
     def _apply_filters(self):
         d_from, d_to = self._current_date_range()
         self.info_lbl.setText(f"{d_from} → {d_to}")
         stake = self.stakes_cb.currentText()
         stake = None if stake in ("", "All Stakes") else stake
-        self.tab_overview.refresh(self.db, self.hero, d_from, d_to, self.currency, stake)
-        self.tab_sessions.refresh(self.db, self.hero, d_from, d_to, self.currency, stake)
-        self.tab_stats.refresh(self.db, self.hero, d_from, d_to, self.currency, stake)
-        self.tab_population.refresh(d_from, d_to, stake)
+        site = self._current_site()
+        game_type = self._current_game_type()
+        self._update_header_hands_label(game_type)
+        self.tab_overview.refresh(self.db, self.hero, d_from, d_to, self.currency, stake, site, game_type)
+        self.tab_sessions.refresh(self.db, self.hero, d_from, d_to, self.currency, stake, site, game_type)
+        self.tab_stats.refresh(self.db, self.hero, d_from, d_to, self.currency, stake, site, game_type)
+        self.tab_population.refresh(d_from, d_to, stake, site, game_type)
 
     def _on_refresh_clicked(self):
         """Manual re-check of the watched folders, for new hands played
@@ -366,15 +467,15 @@ class AppWindow(QMainWindow, AsyncRunner):
         self.refresh_btn.setText("Checking…")
         QApplication.processEvents()
         try:
-            _import_new_hands(self, self.db, self.hero)
+            _, errors = _import_new_hands(self, self.db, self.hero)
         finally:
             self.refresh_btn.setEnabled(True)
             self.refresh_btn.setText("↻ Refresh")
-        self.header_hands_lbl.setText(f"Hero: {self.hero}  |  {self.db.hand_count():,} hands loaded")
         self._update_folder_warning()
         self._update_no_hands_banner()
         self._apply_filters()
         self._apply_live_watch_setting()
+        _notify_ongoing_scan_errors(errors, self._warned_scan_errors)
 
     def _on_manage_folders_clicked(self):
         dlg = HandHistoryDirsDialog(get_hand_history_dirs(), first_run=False, parent=self)
@@ -389,6 +490,43 @@ class AppWindow(QMainWindow, AsyncRunner):
     def _on_settings_clicked(self):
         SettingsDialog(parent=self).exec()
         self._apply_live_watch_setting()
+        self._apply_filters()  # picks up a changed Rakeback % immediately, no restart needed
+
+    def _on_enter_license_key_clicked(self):
+        # LicenseDialog itself already checks format/checksum before
+        # letting Ok through, so an accepted dialog always means a
+        # well-formed key -- nothing further to validate here.
+        dlg = LicenseDialog(current_key=get_license_key(), parent=self)
+        if dlg.exec():
+            # activate_key grants a provisional grace window immediately
+            # (see core/licensing.py) so this takes effect right away even
+            # before the server check below completes.
+            activate_key(dlg.entered_key())
+            # Display-time stakes gating (database/queries.py) reads
+            # is_licensed()/should_gate_by_stakes() fresh on every query,
+            # so a newly-entered key takes effect immediately -- no
+            # restart, no re-import, same reasoning as the Rakeback %
+            # setting above.
+            self._apply_filters()
+            QMessageBox.information(self, "License", "License key saved — thanks for supporting PokerForge!")
+            self.run_async(refresh_license_status, self._on_license_status_refreshed, key="license_status")
+
+    def _maybe_refresh_license_status(self):
+        # The one exception to this app's "no network calls unless you
+        # ask" stance -- and even then, only for someone who's already
+        # entered a paid key (see core/licensing.py's module docstring).
+        # A free-tier user who never enters a key causes zero network
+        # calls, exactly as before. refresh_license_status() itself is
+        # additionally a no-op unless LICENSE_ENFORCED and a server URL
+        # are actually configured, so this is silent today either way.
+        if get_license_key():
+            self.run_async(refresh_license_status, self._on_license_status_refreshed, key="license_status")
+
+    def _on_license_status_refreshed(self, reached_server: bool):
+        if reached_server:
+            # A lapsed subscription (or a freshly renewed one) takes
+            # effect immediately -- same reasoning as entering a key.
+            self._apply_filters()
 
     def _on_getting_started_clicked(self):
         GettingStartedDialog(parent=self).exec()
@@ -469,7 +607,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             progress.setValue(done)
             QApplication.processEvents()
 
-        n = self.db.rebuild_hand_player_stats(ev_iterations=500, on_progress=on_progress)
+        n = self.db.rebuild_hand_player_stats(ev_iterations=500, on_progress=on_progress, hero=self.hero)
         progress.setValue(total)
         QMessageBox.information(self, "Rebuild Complete", f"Rebuilt stats for {n:,} hands.")
         self._apply_filters()
@@ -525,7 +663,7 @@ class AppWindow(QMainWindow, AsyncRunner):
             db_path.unlink()
         (demo_dir / "settings.json").write_text(json.dumps({
             "hero_aliases": [], "hero_name": DEMO_HERO, "currency_symbol": "£",
-            "position_table_stat_ids": None, "trend_stat_ids": None,
+            "position_table_stat_ids": None, "overall_stat_ids": None, "trend_stat_ids": None,
             "trend_interval_days": 14, "hand_history_dirs": [],
         }, indent=2), encoding="utf-8")
 
@@ -553,6 +691,7 @@ class AppWindow(QMainWindow, AsyncRunner):
         file_menu.addAction("Manage Hand History Folders...", self._on_manage_folders_clicked)
         file_menu.addAction("Switch Profile...", self._on_switch_profile_clicked)
         file_menu.addAction("Settings...", self._on_settings_clicked)
+        file_menu.addAction("Enter License Key...", self._on_enter_license_key_clicked)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
@@ -603,12 +742,119 @@ class AppWindow(QMainWindow, AsyncRunner):
             QMessageBox.information(self, "Check for Updates", "You're up to date.")
 
 
-def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int:
+# Tracks candidate names already prompted-for (accepted OR declined) —
+# not just a single "shown once" flag, since one batch can legitimately
+# surface more than one new identity at once (see docstring below), and
+# each distinct candidate deserves its own one-time answer rather than
+# the first one seen suppressing every other one for the rest of the
+# session.
+_prompted_identity_candidates: set[str] = set()
+# Matches this project's existing "don't read anything into a tiny
+# sample" convention (see e.g. ui/tilt_report_dialog.py's MIN_SAMPLE,
+# ui/player_classify.py's MIN_LEAK_SAMPLE).
+_NEW_IDENTITY_MIN_SAMPLE = 20
+# A real account owner's own hand-history export has them seated in
+# essentially every hand (confirmed empirically well above this in real
+# exports across every supported site); a villain who happens to recur
+# a lot in a small batch falls well short of it.
+_NEW_IDENTITY_MIN_SHARE = 0.8
+# Sources whose own export protocol always labels the exporting account's
+# seat literally "Hero" (see core.ggpoker_hand_parser.GGPOKER_HERO_LABEL /
+# core.winning_network_hand_parser.WINNING_NETWORK_HERO_LABEL) rather than
+# the player's real username on that site.
+ANONYMIZING_HERO_SOURCES = {'ggpoker', 'winning_network'}
+
+
+def _maybe_prompt_new_identity_alias(hands, hero: str, parent=None) -> None:
+    """Catches BOTH directions of a real incident this project hit:
+    GGPoker always labels the account owner's own seat literally "Hero"
+    (core.ggpoker_hand_parser.GGPOKER_HERO_LABEL), never the player's
+    real GGPoker username -- so importing GGPoker hands into a profile
+    whose tracked hero is already a different site's username left
+    222,843 real hands silently excluded from Hero's own stats until
+    this existed. But the reverse order breaks exactly the same way: if
+    GGPoker hands are imported FIRST (establishing "Hero" as the tracked
+    identity, correctly, since it's genuinely the only name in that
+    data), a real-username site imported afterward is the one that ends
+    up unmerged instead.
+
+    Checked PER SOURCE, not over the whole batch as one pool — a
+    first-time setup that points at two sites' folders at once produces
+    ONE combined first-run batch, and neither site's own ~100%-of-its-
+    own-hands hero label would individually cross a share threshold
+    measured against the OTHER site's hands mixed in (e.g. 222,843 GG
+    hands is only ~44% of a batch that also has 286,554 PokerStars
+    hands, even though "Hero" is in 100% of the GG portion) — grouping
+    by source first restores that ~100% signal within each site's own
+    hands regardless of how the sites' volumes compare to each other.
+
+    Neither direction, nor the multi-source-at-once case, is GGPoker-
+    specific in principle — any two sites where the same person uses
+    different usernames would hit this — so the detection itself is
+    generic: whoever appears in nearly every hand of one source's
+    portion of a newly-arriving batch, if that's not already the tracked
+    hero or a known alias, is almost certainly the same person under a
+    different name. Catching this at the moment the new hands are about
+    to be written for the first time means no one ever needs the kind of
+    one-off database correction that incident required: if the player
+    says yes here, normalize_hero_aliases (called right after) picks up
+    the freshly-saved alias in this exact same pass, before a single row
+    is written under the wrong identity."""
+    known = {hero} | set(get_hero_aliases())
+    by_source: dict = {}
+    for h in hands:
+        by_source.setdefault(h.source, []).append(h)
+
+    for source, source_hands in by_source.items():
+        if len(source_hands) < _NEW_IDENTITY_MIN_SAMPLE:
+            continue
+        candidate = detect_hero(source_hands)
+        if candidate in known or candidate in _prompted_identity_candidates:
+            continue
+        if hero_hand_share(source_hands, candidate) < _NEW_IDENTITY_MIN_SHARE:
+            continue
+        _prompted_identity_candidates.add(candidate)
+
+        # GGPoker and Winning Network both always label the exporting
+        # account's own seat literally "Hero", never the real username —
+        # same underlying cause, so the same explanation applies to
+        # either, just naming whichever site this batch is actually from.
+        if candidate == GGPOKER_HERO_LABEL and source in ANONYMIZING_HERO_SOURCES:
+            explanation = (
+                f"{site_label(source)} hand histories always label your own seat as \"Hero\" "
+                f"rather than your real {site_label(source)} username, so PokerForge can't "
+                f"tell on its own that these hands are yours ({hero}'s) unless it's told.")
+        else:
+            explanation = (
+                f"These hands are mostly played by \"{candidate}\" — if that's you under a "
+                f"different username on another site, PokerForge can't tell on its own that "
+                f"it's the same person as {hero} unless it's told.")
+
+        msg = QMessageBox(
+            QMessageBox.Icon.Information, "New player identity detected",
+            f"{explanation}\n\n"
+            f"Add \"{candidate}\" as an alias for {hero} now, so these hands are counted "
+            f"correctly from the start?",
+            parent=parent if isinstance(parent, QWidget) else None)
+        yes_btn = msg.addButton("Yes, add it", QMessageBox.ButtonRole.YesRole)
+        msg.addButton("Not now", QMessageBox.ButtonRole.NoRole)
+        msg.exec()
+        if msg.clickedButton() is yes_btn:
+            add_hero_alias(candidate)
+            known.add(candidate)
+
+
+def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> tuple[int, list[tuple[str, str]]]:
     """Checks the watched folders for new/changed files and imports
     whatever new hands they contain — shared by the startup check (main()),
     the Refresh button (AppWindow._on_refresh_clicked()), and the live
     folder watcher (AppWindow._on_live_files_changed()), so all three stay
     in sync rather than drifting into slightly different pipelines.
+
+    Returns (new_hand_count, errors) — unlike the first-run scan, callers
+    here don't show `errors` directly; see _notify_ongoing_scan_errors for
+    why (a persistently-broken file never gets marked imported, so it
+    would otherwise re-report on every single poll/click).
 
     `dialog_threshold` skips the modal progress dialog for a batch smaller
     than this many hands — measured at ~150ms regardless of batch size for
@@ -624,7 +870,7 @@ def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int
                 "— %d new hand(s) found (%d errors)", files_parsed, files_skipped, len(hands), len(errors))
 
     if not hands:
-        return 0
+        return 0, errors
 
     # A silent, automatic safety net taken right before today's first
     # write — at most once per day, so this doesn't add overhead to the
@@ -638,12 +884,13 @@ def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int
     except Exception:
         logger.exception("Automatic pre-import backup failed — continuing with the import anyway")
 
+    _maybe_prompt_new_identity_alias(hands, hero, parent=app_or_window)
     normalize_hero_aliases(hands, hero)
     convert_hands_to_usd(hands)
 
     t0 = time.time()
     if len(hands) < dialog_threshold:
-        db.import_hands(hands, ev_iterations=500)
+        db.import_hands(hands, ev_iterations=500, hero=hero)
     else:
         progress = QProgressDialog(
             f"Building stats database — {len(hands):,} new hand(s)...",
@@ -657,11 +904,11 @@ def _import_new_hands(app_or_window, db, hero, dialog_threshold: int = 1) -> int
             progress.setValue(done)
             QApplication.processEvents()
 
-        db.import_hands(hands, ev_iterations=500, on_progress=on_progress)
+        db.import_hands(hands, ev_iterations=500, on_progress=on_progress, hero=hero)
         progress.setValue(len(hands))
     db.mark_files_imported(fingerprints)
     logger.info("Imported %d new hand(s) in %.1fs", len(hands), time.time() - t0)
-    return len(hands)
+    return len(hands), errors
 
 
 def _open_bug_report_email(extra_body: str = ""):
@@ -679,39 +926,113 @@ def _open_bug_report_email(extra_body: str = ""):
     QDesktopServices.openUrl(QUrl(f"mailto:{to}?subject={subject}&body={body}"))
 
 
+def _is_known_limitation(message: str) -> bool:
+    """True for a hand a parser deliberately refuses to import because of
+    a documented, by-design gap (currently: tournament hands — see
+    core/pokerstars_hand_parser.py and core/ggpoker_hand_parser.py) rather
+    than an actual bug. These should never prompt someone to file a bug
+    report for entirely expected behavior."""
+    return "not supported yet" in message
+
+
+def _notify_ongoing_scan_errors(errors: list[tuple[str, str]], warned: set[tuple[str, str]]) -> None:
+    """The Refresh button and live folder watcher's counterpart to
+    _prompt_first_run_scan_issues — same underlying problem (a file that
+    fails to parse never gets its fingerprint marked imported, so it's
+    re-parsed, and re-fails, on every future scan) but a much quieter
+    response, for two reasons this function exists separately rather than
+    just calling that one:
+
+    - `warned` (AppWindow._warned_scan_errors) is mutated to remember
+      every (path, message) already surfaced this session, so a broken
+      file the live watcher polls every few seconds doesn't pop the same
+      dialog over and over — only genuinely NEW failures (a different
+      file, or the same file failing with a different message after being
+      re-saved) get shown.
+    - Known-limitation errors (tournament hands — see
+      _is_known_limitation) are silently absorbed here, not shown at all:
+      first-run already explained that gap once, and repeating it
+      indefinitely every time a tournament file happens to still be
+      sitting in a watched folder would just be nagging."""
+    new_errors = [(p, m) for p, m in errors if (p, m) not in warned]
+    if not new_errors:
+        return
+    warned.update(new_errors)
+
+    real_errors = [(p, m) for p, m in new_errors if not _is_known_limitation(m)]
+    if not real_errors:
+        return  # only known-limitation skips — already explained at first run, stay quiet
+
+    first_path, first_message = real_errors[0]
+    msg = QMessageBox(
+        QMessageBox.Icon.Warning, "Couldn't read a hand-history file",
+        f"PokerForge found {len(real_errors)} file(s) it couldn't read while checking for "
+        f"new hands — this usually means the file format isn't fully supported yet.\n\n"
+        f"First error:\n{first_path}\n{first_message}\n\n"
+        "Reporting this would help get it fixed. This won't be shown again for the same "
+        "file unless it changes.")
+    report_btn = msg.addButton("Report a Bug...", QMessageBox.ButtonRole.ActionRole)
+    msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+    msg.exec()
+    if msg.clickedButton() is report_btn:
+        error_list = "\n".join(f"{p}: {m}" for p, m in real_errors[:10])
+        _open_bug_report_email(f"Files that failed to parse ({len(real_errors)} total):\n{error_list}")
+
+
 def _prompt_first_run_scan_issues(dirs, hands, errors):
     """Called once, right after the first-run scan, before hero
     detection — covers every outcome of that scan:
 
-    - Real parse errors (`errors` non-empty) get a Warning-level message
-      with a "Report a Bug..." button, REGARDLESS of whether other files
-      parsed fine — a partial failure is just as real a bug as a total
-      one, and silently importing what did work while saying nothing
-      about what didn't would hide it just as effectively as the old
-      "zero hands = nothing to worry about" message this replaces.
+    - Real parse errors get a Warning-level message with a "Report a
+      Bug..." button, REGARDLESS of whether other files parsed fine — a
+      partial failure is just as real a bug as a total one, and silently
+      importing what did work while saying nothing about what didn't
+      would hide it just as effectively as the old "zero hands = nothing
+      to worry about" message this replaces.
+    - Known-limitation skips (see _is_known_limitation) get a calm,
+      Information-level message instead, with no bug-report button —
+      these are expected, documented gaps (tournament hands, for now),
+      not something broken.
     - No errors and no hands found gets the reassuring "haven't played
       yet" message, with a "Manage Folders..." button to fix the
       selection immediately (saved for next launch, not re-scanned
       inline here, to avoid duplicating the scan/import/progress-dialog
       machinery a second time in the same run).
     - Hands found and no errors — the normal case — shows nothing."""
-    if errors:
-        first_path, first_message = errors[0]
+    real_errors = [(p, m) for p, m in errors if not _is_known_limitation(m)]
+    limitation_errors = [(p, m) for p, m in errors if _is_known_limitation(m)]
+
+    if real_errors:
+        first_path, first_message = real_errors[0]
         success_note = (f" It did successfully import {len(hands):,} hand(s) from your "
                          "other files." if hands else "")
+        skipped_note = (f" (Separately, {len(limitation_errors)} hand(s) were skipped as a "
+                         "known, not-yet-supported format — not a bug, see below.)"
+                         if limitation_errors else "")
         msg = QMessageBox(
             QMessageBox.Icon.Warning, "Couldn't read some hand-history files",
-            f"PokerForge found {len(errors)} file(s) in your folder(s) but couldn't "
-            f"read {'it' if len(errors) == 1 else 'any of them'} — this usually means "
-            f"the file format isn't fully supported yet.{success_note}\n\n"
+            f"PokerForge found {len(real_errors)} file(s) in your folder(s) but couldn't "
+            f"read {'it' if len(real_errors) == 1 else 'any of them'} — this usually means "
+            f"the file format isn't fully supported yet.{success_note}{skipped_note}\n\n"
             f"First error:\n{first_path}\n{first_message}\n\n"
             "Reporting this would help get it fixed.")
         report_btn = msg.addButton("Report a Bug...", QMessageBox.ButtonRole.ActionRole)
         msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
         msg.exec()
         if msg.clickedButton() is report_btn:
-            error_list = "\n".join(f"{p}: {m}" for p, m in errors[:10])
-            _open_bug_report_email(f"Files that failed to parse ({len(errors)} total):\n{error_list}")
+            error_list = "\n".join(f"{p}: {m}" for p, m in real_errors[:10])
+            _open_bug_report_email(f"Files that failed to parse ({len(real_errors)} total):\n{error_list}")
+        return
+
+    if limitation_errors:
+        _, first_message = limitation_errors[0]
+        success_note = (f" Everything else — {len(hands):,} hand(s) — imported normally."
+                         if hands else "")
+        QMessageBox.information(
+            None, "Some hands were skipped",
+            f"PokerForge found {len(limitation_errors)} hand(s) that aren't supported "
+            f"yet ({first_message}).{success_note}\n\n"
+            "This isn't a bug — see the Roadmap for what's planned.")
         return
 
     if hands:
@@ -829,6 +1150,7 @@ def main():
         logger.info("Detected hero: %s, currency: %s", hero, currency)
 
     if hands:
+        _maybe_prompt_new_identity_alias(hands, hero)
         normalize_hero_aliases(hands, hero)
         convert_hands_to_usd(hands)
 
@@ -854,7 +1176,7 @@ def main():
         # stats are robust to iteration count; only individual-hand
         # precision drops, and this is a one-time bulk import, not a
         # per-hand precision tool.
-        db.import_hands(hands, ev_iterations=500, on_progress=on_progress)
+        db.import_hands(hands, ev_iterations=500, on_progress=on_progress, hero=hero)
         db.mark_files_imported(fingerprints)
         logger.info("Database ready in %.1fs", time.time() - t0)
         progress.setValue(len(hands))

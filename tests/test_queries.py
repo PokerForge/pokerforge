@@ -11,16 +11,17 @@ import pytest
 
 from database.repository import PokerDatabase, _STATS_COLS
 from database.queries import (
-    hero_overview_query, sessions_query, available_stakes_query,
+    hero_overview_query, sessions_query, available_stakes_query, available_sites_query,
     population_summary_query, hands_for_stat_query, hands_for_position_query,
-    position_breakdown_query, population_by_position_query,
+    position_breakdown_query, population_by_position_query, villain_stats_query,
+    hero_hand_sources_query,
 )
 
 _DEFAULTS = {c: 0 for c in _STATS_COLS}
 _DEFAULTS.update({
     "hand_id": None, "player_name": None, "played_at": None, "big_blind": None,
-    "profit": 0.0, "ev": None, "position": None, "stakes_label": None,
-    "vpip_pfr_opp": 1,
+    "profit": 0.0, "ev": None, "position": None, "stakes_label": None, "source": None,
+    "vpip_pfr_opp": 1, "session_type": "cash", "tournament_id": None,
 })
 
 
@@ -66,6 +67,16 @@ def test_hero_overview_vpip_pfr_and_profit(db):
     assert total[-1] == pytest.approx(1.5)
 
 
+def test_hero_overview_sums_rake_for_the_rakeback_stat(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T12:00:00",
+                       big_blind=0.30, profit=3.0, stakes_label="£0.15/£0.30", rake=0.02)
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-02T12:00:00",
+                       big_blind=0.30, profit=-1.5, stakes_label="£0.15/£0.30", rake=0.03)
+
+    values, _ = hero_overview_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+    assert values["rake"] == pytest.approx(0.05)
+
+
 def test_hero_overview_excludes_hands_outside_the_date_range(db):
     _insert_stats_row(db, hand_id="in_range", player_name="Hero", played_at="2026-06-15T00:00:00",
                        big_blind=0.30, profit=5.0, stakes_label="£0.15/£0.30")
@@ -86,6 +97,17 @@ def test_hero_overview_filters_by_stake(db):
                        big_blind=1.0, profit=10.0, stakes_label="£0.50/£1.00")
 
     values, _ = hero_overview_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), stake="£0.50/£1.00")
+    assert values["hands"] == 1
+    assert values["profit"] == pytest.approx(10.0)
+
+
+def test_hero_overview_filters_by_site(db):
+    _insert_stats_row(db, hand_id="ip", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, profit=1.0, source="ipoker")
+    _insert_stats_row(db, hand_id="gg", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, profit=10.0, source="ggpoker")
+
+    values, _ = hero_overview_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), site="ggpoker")
     assert values["hands"] == 1
     assert values["profit"] == pytest.approx(10.0)
 
@@ -115,6 +137,17 @@ def test_sessions_query_groups_by_date_and_stakes(db):
     assert len(rows) == 2  # two distinct (date, stakes) buckets
 
 
+def test_sessions_query_filters_by_site(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T10:00:00",
+                       big_blind=0.30, profit=1.0, stakes_label="£0.15/£0.30", source="ipoker")
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-01T14:00:00",
+                       big_blind=0.30, profit=2.0, stakes_label="£0.15/£0.30", source="ggpoker")
+
+    rows = sessions_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), site="ggpoker")
+    assert len(rows) == 1
+    assert rows[0][2] == 1  # hand count for that one GG hand only
+
+
 def test_available_stakes_query_returns_distinct_stakes_in_range(db):
     _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
                        big_blind=0.30, stakes_label="£0.15/£0.30")
@@ -125,6 +158,122 @@ def test_available_stakes_query_returns_distinct_stakes_in_range(db):
 
     stakes = available_stakes_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
     assert set(stakes) == {"£0.15/£0.30", "£0.50/£1.00"}
+
+
+def test_available_sites_query_returns_distinct_sources_in_range(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="ipoker")
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, source="ggpoker")
+    _insert_stats_row(db, hand_id="h3", player_name="Hero", played_at="2026-01-01T00:00:00",
+                       big_blind=0.30, source="pokerstars")  # outside range
+
+    sites = available_sites_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30))
+    assert set(sites) == {"ipoker", "ggpoker"}
+
+
+def test_hero_hand_sources_query_filters_by_stake(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30", source="ipoker")
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-02T00:00:00",
+                       big_blind=1.00, stakes_label="£0.50/£1.00", source="ipoker")
+
+    sources = hero_hand_sources_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30),
+                                       stake="£0.15/£0.30")
+    assert sources == {"ipoker": 1}
+
+
+def test_hero_hand_sources_query_filters_by_site(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="ipoker")
+    _insert_stats_row(db, hand_id="h2", player_name="Hero", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, source="ggpoker")
+
+    sources = hero_hand_sources_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30),
+                                       site="ggpoker")
+    assert sources == {"ggpoker": 1}
+
+
+def test_hero_hand_sources_query_returns_empty_when_filter_matches_nothing(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, stakes_label="£0.15/£0.30")
+
+    sources = hero_hand_sources_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30),
+                                       stake="£100/£200")
+    assert sources == {}
+
+
+def test_villain_stats_query_filters_by_site(db):
+    _insert_stats_row(db, hand_id="ip", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="ipoker", vpip=1, vpip_pfr_opp=1)
+    _insert_stats_row(db, hand_id="ps", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="pokerstars", vpip=0, vpip_pfr_opp=1)
+
+    values, hand_count, _, _ = villain_stats_query(
+        db, "Villain1", date(2026, 6, 1), date(2026, 6, 30), site="ipoker")
+    assert hand_count == 1
+    assert values["vpip"] == 100.0
+
+
+def test_villain_stats_query_computes_limp_and_limp_call_percentages(db):
+    _insert_stats_row(db, hand_id="h1", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, limp_opp=1, limp=1, limp_call_opp=1, limp_call=1)
+    _insert_stats_row(db, hand_id="h2", player_name="Villain1", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, limp_opp=1, limp=0)
+
+    values, hand_count, _, opp_counts = villain_stats_query(
+        db, "Villain1", date(2026, 6, 1), date(2026, 6, 30))
+
+    assert hand_count == 2
+    assert values["limp"] == 50.0
+    assert values["limp_call"] == 100.0
+    assert opp_counts["limp"] == 2
+    assert opp_counts["limp_call"] == 1
+
+
+def test_villain_stats_query_fold_3bet_as_raiser_excludes_cold_folds(db):
+    """fold_3bet_as_raiser is the narrower population behind the
+    "Over-folds to 3-Bets" exploit/leak (see database/queries.py's
+    LEAK_HAND_CONDITIONS) — restricted to hands where this player made
+    the open and got re-raised, unlike the plain fold_3bet/faced_3bet_opp
+    columns which also count a cold fold to someone else's already-raised
+    pot before this player ever acted."""
+    # Villain opens, gets 3-bet, folds — counts toward both the broad and
+    # the narrow population.
+    _insert_stats_row(db, hand_id="h1", player_name="Villain1", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, faced_3bet_opp=1, folded_to_3bet=1,
+                       faced_3bet_as_raiser_opp=1, folded_to_3bet_as_raiser=1)
+    # Villain never opens — someone else opened and got 3-bet before
+    # Villain's own first decision — counts toward the broad population
+    # only, not the narrow one.
+    _insert_stats_row(db, hand_id="h2", player_name="Villain1", played_at="2026-06-02T00:00:00",
+                       big_blind=0.30, faced_3bet_opp=1, folded_to_3bet=1,
+                       faced_3bet_as_raiser_opp=0, folded_to_3bet_as_raiser=0)
+
+    values, hand_count, _, opp_counts = villain_stats_query(
+        db, "Villain1", date(2026, 6, 1), date(2026, 6, 30))
+
+    assert hand_count == 2
+    assert values["fold_3bet"] == 100.0  # unchanged broad PT4-matching number
+    assert values["fold_3bet_as_raiser"] == 100.0  # h1 is the only opportunity, and it folded
+    assert opp_counts["fold_3bet"] == 2
+    assert opp_counts["fold_3bet_as_raiser"] == 1
+
+
+def test_hands_for_leak_query_excludes_cold_folds_for_fold_3bet_high(db):
+    from database.queries import hands_for_leak_query
+
+    _insert_stats_row(db, hand_id="opened_and_folded", player_name="Villain1",
+                       played_at="2026-06-01T00:00:00", big_blind=0.30,
+                       faced_3bet_as_raiser_opp=1, folded_to_3bet_as_raiser=1)
+    _insert_stats_row(db, hand_id="cold_folded", player_name="Villain1",
+                       played_at="2026-06-02T00:00:00", big_blind=0.30,
+                       faced_3bet_as_raiser_opp=0, folded_to_3bet_as_raiser=0)
+
+    rows = hands_for_leak_query(db, "Villain1", "fold_3bet_high",
+                                 date(2026, 6, 1), date(2026, 6, 30))
+
+    assert [r[0] for r in rows] == ["opened_and_folded"]
 
 
 def test_population_summary_excludes_the_hero_and_anon_placeholders(db):
@@ -228,6 +377,26 @@ def test_population_by_position_matches_hero_query_shape_for_the_same_data(db):
     pop_result = population_by_position_query(db, "SomeoneElse", date(2026, 6, 1), date(2026, 6, 30))
 
     assert hero_result["CO"][0]["three_bet"] == pop_result["CO"][0]["three_bet"] == 100.0
+
+
+def test_hands_for_stat_query_filters_by_site(db):
+    _insert_stats_row(db, hand_id="ip", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="ipoker", vpip=1, pfr=1)
+    _insert_stats_row(db, hand_id="gg", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, source="ggpoker", vpip=1, pfr=1)
+
+    rows = hands_for_stat_query(db, "Hero", "pfr", date(2026, 6, 1), date(2026, 6, 30), site="ipoker")
+    assert {r[0] for r in rows} == {"ip"}
+
+
+def test_position_breakdown_query_filters_by_site(db):
+    _insert_stats_row(db, hand_id="ip", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, position="BTN", source="ipoker")
+    _insert_stats_row(db, hand_id="gg", player_name="Hero", played_at="2026-06-01T00:00:00",
+                       big_blind=0.30, position="BTN", source="ggpoker")
+
+    result = position_breakdown_query(db, "Hero", date(2026, 6, 1), date(2026, 6, 30), site="ggpoker")
+    assert result["BTN"][1] == 1  # hand_count
 
 
 def test_hands_for_stat_query_supports_fold_to_steal(db):
