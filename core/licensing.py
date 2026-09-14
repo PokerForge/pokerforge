@@ -72,12 +72,11 @@ def validate_license_key(key: str) -> bool:
     return _checksum(body) == checksum
 
 
-# Where the deployed license server (server/webhook_server.py) lives. None
-# until that service is actually deployed — refresh_license_status() is a
-# no-op while this is unset, same as everything else here while
-# LICENSE_ENFORCED is False. Update this one line once you have a real
-# deployed URL (see server/README.md).
-LICENSE_SERVER_URL: str | None = None
+# Where the deployed license server (server/webhook_server.py) lives.
+# refresh_license_status() is a no-op while LICENSE_ENFORCED is False,
+# same as everything else here, so this being set doesn't yet cause any
+# network activity on its own.
+LICENSE_SERVER_URL: str | None = "https://pokerforge-license-server.onrender.com"
 
 # How many days of "couldn't reach the server" a subscriber's cached
 # expiry is trusted past its face value before locking back to free tier.
