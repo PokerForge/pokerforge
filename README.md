@@ -33,11 +33,59 @@ played against actually plays.
 
 - Grosvenor Poker's native XML session export
 - iPoker Network text exports
+- PokerStars text exports (full villain/population support — PokerStars
+  keeps real, persistent usernames; cash and tournament hands both supported)
+- GGPoker (and its skins: Natural8, BetKings, etc.) text exports — cash
+  and tournament hands both supported — see the note below on villain
+  stats for this one
+- Winning Network (Americas Cardroom, Black Chip Poker, etc.) text
+  exports — cash and tournament hands both supported, same
+  opponent-anonymization behavior as GGPoker, see the note below
 
 Adding another site means writing and validating a new parser (see
-`core/hand_parser.py` and `core/xml_hand_parser.py` for the existing two,
-and `tests/test_hand_parser.py` / `tests/test_xml_hand_parser.py` for how
-they're tested) — there's no generic parser today.
+`core/hand_parser.py`, `core/xml_hand_parser.py`,
+`core/pokerstars_hand_parser.py`, `core/ggpoker_hand_parser.py`, and
+`core/winning_network_hand_parser.py` for the existing five, and their
+matching `tests/test_*.py` files for how they're tested) — there's no
+generic parser today.
+
+**Tournament support:** PokerStars, GGPoker, and Winning Network hands
+are tracked separately from cash — a tournament's per-hand chip
+movements aren't real money until the tournament itself pays out. Instead
+of a separate tab, a global **$ / T** toggle in the filter bar (next to
+Stakes) switches Overview/Sessions/Stats/Population between cash and
+tournament content, the way PT4/Hold'em Manager do it. In Tournament
+mode, Overview shows a results summary and cumulative-profit graph, and
+Sessions shows the tournament results table. No hand-history export
+contains a finish position or payout, so real ROI/ITM% needs you to log
+each tournament's result yourself (a small form, opened by
+double-clicking its row in Sessions) — until you do, it just shows the
+hands played and buy-in. iPoker and Grosvenor tournament hands aren't
+parsed yet (no real sample of either to validate a parser against) —
+they're rejected with a clear error rather than silently imported as
+cash.
+
+**GGPoker/Winning Network note:** both sites anonymize every opponent as
+a random label that resets on every hand (a deliberate anti-tracking
+measure — the same reason other trackers can't build opponent stats on
+these sites either). Hero's own stats (Overview, Sessions, Stats — both cash and
+tournament modes) are unaffected and import in full; the
+population/villain-profile features simply won't have any data for
+these hands, since there's no stable opponent identity to build a
+profile against.
+
+Both sites also always label the account owner's own seat literally
+`"Hero"`, never your real username there — so playing on one of them
+and at least one other site under different usernames (or setting both
+up at once on a brand-new install) would otherwise import as two
+separate, unmerged identities, with that site's own volume missing from
+your Overview/Sessions/Stats entirely. PokerForge detects this
+generically (it's not really a GGPoker/Winning-Network-specific
+problem, just the two sites guaranteed to trigger it) and offers to add
+the new identity as an alias for your existing one, whichever order the
+sites' hands happen to import in — accept it so every site's hands are
+counted correctly from the start, rather than importing under separate,
+untracked identities.
 
 ## Running from source
 
@@ -120,7 +168,7 @@ the warning looks for a new user):
 
 ## Known limitations / not yet built
 
-- Only two poker-site formats are supported (see above).
+- Only four poker-site formats are supported (see above).
 - No license-key or payment infrastructure yet — the app is fully free
   during early access.
 - No code signing on the Windows build yet — see "If Windows warns you"
