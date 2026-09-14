@@ -160,38 +160,46 @@ now done:
 
 ## Business / Site
 
-- **Pricing page + accounts + Stripe** — no pricing/account
-  infrastructure exists yet; deliberately deferred until there's an
-  actual paid tier worth putting behind it.
+- ~~**Pricing page + accounts + Stripe**~~ — **Built, not yet switched
+  on.** Free tier is display-time stakes gating (`core/licensing.py`'s
+  `should_gate_by_stakes`/`FREE_TIER_MAX_CASH_BB`/`FREE_TIER_MAX_TOURNEY_BUYIN`):
+  2NL/5NL cash and sub-$5 tournament buy-ins stay fully visible for
+  everyone, higher stakes need a license — gated at query time
+  (`database/queries.py`), never at import, so nothing is ever lost on
+  upgrade/downgrade and all data stays local regardless of license
+  status (matches `PRIVACY_POLICY.md`'s local-only-data promise — a
+  paywall only ever hides higher-stake rows, never deletes or blocks
+  import of anything).
 
-  **Plan for the free-now-paid-later transition:** give everyone full
-  access now to build momentum, then gate features (not data) later.
-  All app data is local-only (SQLite under `%APPDATA%\SFPoker`,
-  untouched by installer updates), so an app update alone can never
-  wipe or lock a user out of hands they've already imported — any
-  future paywall has to be a deliberate feature gate, not a side effect
-  of data storage.
+  A real subscription backend is deployed and verified end-to-end
+  (real test-mode Stripe purchase → webhook → key issued → emailed →
+  accepted in-app): `server/webhook_server.py` on Render
+  (`https://pokerforge-license-server.onrender.com`), Stripe
+  Checkout via Payment Links ($9.99/mo, $99.99/yr), SendGrid for
+  delivery. `core/licensing.py` caches a subscription's paid-through
+  date locally with a 14-day offline grace period, checked once per
+  app launch — only for someone who's already entered a paid key, so
+  a free-tier user still causes zero network calls.
 
-  - Keep basic tracking (Overview, Sessions, core Stats) free forever
-    as the funnel; gate only the Intelligence Engine features (Study
-    Queue, Exploit Reports, villain profiles, tilt/deviation
-    backtesting) behind the paid tier.
-  - **Grandfather early users**: anyone who installs before the
-    paywall cutoff date keeps the Intelligence Engine features
-    unlocked permanently. Costs some conversion revenue from early
-    adopters, but they're the ones building word-of-mouth during the
-    momentum-building phase, and locking them out later would burn
-    that goodwill right when it matters most.
-  - Never gate on data presence/deletion — only on feature visibility.
-    Wiping or hiding a user's own already-imported data behind a
-    paywall would contradict `PRIVACY_POLICY.md`'s local-only-data
-    promise and reads uncomfortably close to hostile/ransomware-style
-    behavior.
-  - Cheap prep to do now (low cost, avoids a retrofit later): add a
-    single local `is_pro_unlocked() -> bool` seam that the premium
-    features call, hardcoded to `True` for now. When accounts/Stripe
-    exist, flip that one function to a real license/grandfather check
-    instead of adding gating logic across the whole app at once.
+  **`LICENSE_ENFORCED` is still `False`** — nothing is gated for
+  anyone yet. Before flipping it to actually go live:
+  - Add a small persistent disk to the Render service and point
+    `LICENSE_LEDGER_PATH` at it — the free tier's filesystem is
+    ephemeral, so a redeploy/restart currently wipes the record of
+    who's paid for what (`server/README.md`'s Storage note).
+  - Update `PRIVACY_POLICY.md` — it currently says the app makes zero
+    network calls, which stops being fully true for paying
+    subscribers (`refresh_license_status`'s one narrow exception).
+  - Be aware Render's free tier spins down after 15 min idle, adding
+    ~30-60s to the first webhook delivery after a quiet spell —
+    Stripe's own retry schedule covers this, but worth knowing if a
+    webhook looks "slow" rather than failed.
+  - Address the 4 Dependabot vulnerabilities GitHub is flagging on the
+    repo's dependencies (2 moderate, 2 low) — unrelated to licensing
+    specifically, but good hygiene before pointing real customers at
+    any of this.
+  - Manual issuance still works today with zero infrastructure via
+    `python scripts/generate_license_key.py`, for the meantime.
 - **Blog/SEO content** — no urgency, but worth having eventually for
   organic discovery.
 
