@@ -1,6 +1,6 @@
 """Single source of truth for the app version — shown in Help > About and
 worth bumping on every release once there's a real release process."""
-APP_VERSION = "1.0.0-beta.3"
+APP_VERSION = "1.0.0-beta.4"
 
 # "owner/repo" for Help > Check for Updates to query GitHub's own Releases
 # API (no hosting to set up — GitHub already serves this for any public

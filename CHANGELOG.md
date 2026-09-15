@@ -4,6 +4,23 @@ All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 
+## [1.0.0-beta.4] — 2026-09-15
+
+Fixes a serious bug affecting every previous release.
+
+### Fixed
+
+- **PokerForge no longer opens a pile of "PokerForge is already
+  running" windows when it imports hands.** Importing spreads the work
+  across several processes to keep it fast; on Windows each of those
+  was accidentally starting a whole extra copy of the app instead of
+  doing its share of the work. It affected every installed version
+  before this one, and showed up the first time you imported hands.
+
+  If you hit this, nothing was damaged — the extra windows were idle
+  copies, and your hands and database are untouched. Installing this
+  version is all that's needed.
+
 ## [1.0.0-beta.3] — 2026-09-15
 
 A new look, and groundwork under the hood.
