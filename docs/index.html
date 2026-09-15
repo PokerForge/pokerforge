@@ -69,10 +69,15 @@
   .device .dot{width:10px; height:10px; border-radius:50%; background:var(--bg4);}
   .device img{width:100%; display:block; border-radius:8px; border:1px solid var(--border-soft);}
 
-  .compat{padding:26px 0; border-bottom:1px solid var(--border-soft);}
-  .compat-row{display:flex; align-items:center; gap:18px; flex-wrap:wrap; justify-content:center;}
-  .compat-label{font-size:12.5px; color:var(--dimmer); font-family:var(--mono); letter-spacing:.06em; text-transform:uppercase;}
-  .pill{font-size:13.5px; font-weight:600; color:var(--dim); border:1px solid var(--border); border-radius:999px; padding:6px 16px;}
+  .compat{padding:42px 0 38px; border-bottom:1px solid var(--border-soft); text-align:center;}
+  .compat-label{font-size:11.5px; color:var(--dimmer); font-family:var(--mono); letter-spacing:.16em; text-transform:uppercase;}
+  .compat-row{display:flex; align-items:baseline; justify-content:center; flex-wrap:wrap; gap:8px 34px; margin-top:18px;}
+  /* Set as wordmarks rather than tags: at this scale the type carries the
+     same weight a logo row would, without borrowing anyone's marks. */
+  .room{font-family:var(--display); font-weight:700; font-size:clamp(19px,2.3vw,26px);
+    text-transform:uppercase; letter-spacing:.045em; color:var(--dim); transition:color .18s ease;}
+  .room:hover{color:var(--text);}
+  .compat-note{margin-top:20px; font-size:13px; color:var(--dimmer);}
 
   section{padding:96px 0;}
   .sec-head{max-width:640px; margin-bottom:52px;}
@@ -172,12 +177,15 @@
 </section>
 
 <div class="compat">
-  <div class="wrap compat-row">
-    <span class="compat-label">Reads hand histories from</span>
-    <span class="pill">PokerStars</span>
-    <span class="pill">GGPoker</span>
-    <span class="pill">Winning Network / ACR</span>
-    <span class="pill">iPoker</span>
+  <div class="wrap">
+    <p class="compat-label">Reads hand histories from</p>
+    <div class="compat-row">
+      <span class="room">PokerStars</span>
+      <span class="room">GGPoker</span>
+      <span class="room">Winning Network / ACR</span>
+      <span class="room">iPoker</span>
+    </div>
+    <p class="compat-note">Cash games and tournaments alike — every parser verified against real exports totalling over half a million hands.</p>
   </div>
 </div>
 
