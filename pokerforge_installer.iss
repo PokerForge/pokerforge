@@ -50,7 +50,14 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 WelcomeLabel2=This will install [name/ver] on your computer.%n%nPokerForge analyses your poker hand histories, finds your biggest leaks, and shows you exactly what to work on.%n%nIt is recommended that you close all other applications before continuing.
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
+; Deliberately NOT "checkedonce", which only ticks the box on a machine's
+; very first install and leaves it clear on every later run. During a beta
+; people reinstall often to pick up fixes, and each of those upgrades was
+; silently skipping the shortcut -- you had to notice an unticked box on a
+; page most people click straight through. Ticked by default every time:
+; re-creating a shortcut that already exists is harmless, and someone who
+; genuinely doesn't want one can still untick it.
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
 Source: "dist\PokerForge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
