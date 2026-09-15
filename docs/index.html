@@ -147,7 +147,7 @@
       <a href="#faq">FAQ</a>
       <a href="https://github.com/PokerForge/pokerforge">GitHub</a>
     </nav>
-    <a href="https://github.com/PokerForge/pokerforge/releases" class="btn btn-primary">Download Free</a>
+    <a href="https://github.com/PokerForge/pokerforge/releases/download/v1.0.0-beta.1/PokerForge-Setup-1.0.0-beta.1.exe" class="btn btn-primary js-download">Download Free</a>
   </div>
 </header>
 
@@ -159,10 +159,10 @@
       <h1 style="margin-top:18px;">The stats engine that never leaves <span class="fg">your desk.</span></h1>
       <p class="lead">Import your own hands, track every session, and let PokerForge tell you exactly what to fix next — running entirely on your computer. Nothing you play is ever uploaded.</p>
       <div class="ctas">
-        <a href="https://github.com/PokerForge/pokerforge/releases" class="btn btn-primary">Download for Windows</a>
+        <a href="https://github.com/PokerForge/pokerforge/releases/download/v1.0.0-beta.1/PokerForge-Setup-1.0.0-beta.1.exe" class="btn btn-primary js-download">Download for Windows</a>
         <a href="#features" class="btn btn-ghost">See it in action</a>
       </div>
-      <p class="trust"><b>Free</b> to download &nbsp;·&nbsp; <b>No account</b> required &nbsp;·&nbsp; Windows 10/11</p>
+      <p class="trust"><b>Free</b> to download &nbsp;·&nbsp; <b>No account</b> required &nbsp;·&nbsp; Windows 10/11<span id="dl-meta"></span></p>
     </div>
     <div class="device">
       <div class="bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
@@ -349,7 +349,7 @@
         <h4>Product</h4>
         <a href="#features">Features</a>
         <a href="#faq">FAQ</a>
-        <a href="https://github.com/PokerForge/pokerforge/releases">Download</a>
+        <a href="https://github.com/PokerForge/pokerforge/releases">All releases</a>
       </div>
       <div>
         <h4>Project</h4>
@@ -370,5 +370,42 @@
   </div>
 </footer>
 
+<script>
+  // The Download buttons ship with a hardcoded link to a known-good
+  // installer so they work with JavaScript disabled or the API
+  // unreachable. This upgrades them to whatever the newest release is,
+  // so publishing a release is all that's needed — no site edit.
+  //
+  // Deliberately the releases LIST endpoint, not /releases/latest:
+  // "latest" excludes pre-releases, and every build so far is one.
+  (function () {
+    fetch('https://api.github.com/repos/PokerForge/pokerforge/releases')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (releases) {
+        var asset, release;
+        for (var i = 0; i < releases.length && !asset; i++) {
+          if (releases[i].draft) continue;
+          for (var j = 0; j < releases[i].assets.length; j++) {
+            if (/\.exe$/i.test(releases[i].assets[j].name)) {
+              asset = releases[i].assets[j];
+              release = releases[i];
+              break;
+            }
+          }
+        }
+        if (!asset) return;
+        var links = document.querySelectorAll('.js-download');
+        for (var k = 0; k < links.length; k++) {
+          links[k].href = asset.browser_download_url;
+        }
+        var meta = document.getElementById('dl-meta');
+        if (meta) {
+          meta.textContent = '  ·  ' + release.tag_name +
+            '  ·  ' + Math.round(asset.size / 1048576) + ' MB';
+        }
+      })
+      .catch(function () { /* keep the hardcoded link */ });
+  })();
+</script>
 </body>
 </html>
