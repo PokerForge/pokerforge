@@ -188,9 +188,10 @@ now done:
     Stripe is the durable record and the SQLite ledger is a cache that
     `/license/status` rebuilds on a miss. Render's ephemeral filesystem
     is no longer a data-loss risk, and no paid disk is needed.
-  - Update `PRIVACY_POLICY.md` — it currently says the app makes zero
-    network calls, which stops being fully true for paying
-    subscribers (`refresh_license_status`'s one narrow exception).
+  - ~~Update `PRIVACY_POLICY.md`~~ — **Done.** Now discloses the
+    subscriber licence check (key only, never poker data), and what
+    buying involves: Stripe for payment, SendGrid for delivery, and the
+    email/key/subscription state the licence server holds.
   - Be aware Render's free tier spins down after 15 min idle, adding
     ~30-60s to the first webhook delivery after a quiet spell —
     Stripe's own retry schedule covers this, but worth knowing if a
