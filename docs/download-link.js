@@ -25,10 +25,13 @@
         for (var k = 0; k < links.length; k++) {
           links[k].href = asset.browser_download_url;
         }
-        var meta = document.getElementById('dl-meta');
-        if (meta) {
-          meta.textContent = '  ·  ' + release.tag_name +
-            '  ·  ' + Math.round(asset.size / 1048576) + ' MB';
+        // Size only: useful before clicking. The version number is
+        // deliberately left off -- "beta" reads as a warning at the exact
+        // moment someone is deciding whether to download.
+        var size = document.getElementById('dl-size');
+        if (size) {
+          size.textContent = Math.round(asset.size / 1048576) + ' MB download';
+          size.hidden = false;
         }
       })
       .catch(function () { /* keep the hardcoded link */ });

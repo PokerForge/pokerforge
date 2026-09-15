@@ -45,8 +45,12 @@
   .hero h1 .fg{color:var(--green-bright);}
   .hero p.lead{margin-top:20px; font-size:18px; color:var(--dim); max-width:52ch;}
   .hero .ctas{display:flex; gap:14px; margin-top:32px; flex-wrap:wrap;}
-  .hero .trust{margin-top:20px; font-size:13px; color:var(--dimmer); font-family:var(--mono);}
-  .hero .trust b{color:var(--dim); font-weight:600;}
+  /* Reassurances, not fine print: set in the body face with a tick each,
+     rather than dim monospace which read like debug output. */
+  .hero .trust{list-style:none; display:flex; flex-wrap:wrap; gap:9px 24px;
+    margin:26px 0 0; padding:0; font-size:13.5px; color:var(--dim);}
+  .hero .trust li{display:flex; align-items:center; gap:8px;}
+  .hero .trust li::before{content:"\2713"; color:var(--green-bright); font-weight:700; font-size:12.5px;}
   .device{background:var(--bg2); border:1px solid var(--border); border-radius:14px; padding:10px; box-shadow:0 40px 90px -30px rgba(0,0,0,.7);}
   .device .bar{display:flex; gap:6px; padding:6px 8px 12px;}
   .device .dot{width:10px; height:10px; border-radius:50%; background:var(--bg4);}
