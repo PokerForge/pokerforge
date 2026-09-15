@@ -5,7 +5,15 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('database/schema.sql', 'database'), ('CHANGELOG.md', '.')],
+    # Only the two assets the app actually loads at runtime. Shipping the
+    # whole assets/ folder dragged ~6MB of working files into every
+    # install -- superseded header-banner experiments, icon previews, logo
+    # backups, and the 1.5MB source SVG that only scripts/build_logo.py
+    # reads. Add a line here if the app starts loading something new.
+    datas=[('assets/app_icon_chip.ico', 'assets'),
+           ('assets/pf_logo.png', 'assets'),
+           ('database/schema.sql', 'database'),
+           ('CHANGELOG.md', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

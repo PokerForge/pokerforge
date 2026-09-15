@@ -70,9 +70,9 @@ CREATE TABLE IF NOT EXISTS hand_player_stats (
 
     -- Preflop (core.stats.PlayerHandFlags)
     -- vpip_pfr_opp: 0 only for a BB who "walked" (won uncontested with zero
-    -- preflop actions of their own) — PT4 excludes those hands from VPIP/PFR's
-    -- denominator entirely ("Number of Hands - Number of Walks"), since the
-    -- player never had a decision to make.
+    -- preflop actions of their own) — such hands are excluded from
+    -- VPIP/PFR's denominator entirely ("Number of Hands - Number of
+    -- Walks"), since the player never had a decision to make.
     vpip_pfr_opp INTEGER DEFAULT 1,
     vpip INTEGER, pfr INTEGER,
     three_bet_opp INTEGER, three_bet INTEGER,
