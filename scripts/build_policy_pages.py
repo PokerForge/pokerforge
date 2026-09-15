@@ -65,6 +65,7 @@ TEMPLATE = """<!doctype html>
       <span>Poker<span class="fg">Forge</span></span>
     </a>
     <nav class="nav-links">
+      <a href="/">Home</a>
       <a href="/#features">Features</a>
       <a href="/#faq">FAQ</a>
     </nav>
@@ -99,9 +100,7 @@ TEMPLATE = """<!doctype html>
       <div>
         <h4>Project</h4>
         <a href="mailto:support@pokerforge.app">Support</a>
-        <a href="https://github.com/PokerForge/pokerforge">GitHub</a>
-        <a href="https://github.com/PokerForge/pokerforge/issues/new">Report an issue</a>
-        <a href="https://github.com/PokerForge/pokerforge/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="mailto:support@pokerforge.app?subject=PokerForge%20issue%20report">Report an issue</a>
       </div>
       <div>
         <h4>Legal</h4>
