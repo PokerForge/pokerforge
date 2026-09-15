@@ -1,7 +1,17 @@
-"""Builds the header logo and the Windows app icon from one source SVG.
+"""Builds every rendering of the PF chip mark from one source SVG.
 
-    assets/pf_logo_source.svg  ->  assets/pf_logo.png        (header)
-                               ->  assets/app_icon_chip.ico  (app/installer)
+    assets/pf_logo_source.svg  ->  assets/pf_logo.png          (app header)
+                               ->  assets/app_icon_chip.ico    (app/installer)
+                               ->  docs/logo.png               (site header/footer)
+                               ->  docs/favicon.ico            (site)
+                               ->  docs/favicon-32.png         (site)
+                               ->  docs/favicon-192.png        (site)
+                               ->  docs/apple-touch-icon.png   (site, iOS)
+
+The site assets are built here rather than exported separately because
+they drifted once already: the app moved to new artwork while the site
+kept serving the previous mark, so the two disagreed about what the logo
+was. One source, one command, no drift.
 
 Run after replacing the source artwork:
 
@@ -48,6 +58,19 @@ OUTPUT_SIZE = 256        # covers a 72px logo up to 300% display scaling
 # small view, 32 on the taskbar, 48 in Explorer's default, 256 for the
 # large tile and the installer. The rest fill in scaled displays.
 ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
+
+# The site. docs/logo.png is displayed at 32px and 22px, so 128 gives
+# retina headroom; apple-touch-icon is 180 by Apple's convention.
+DOCS = ROOT / "docs"
+SITE_PNGS = {"logo.png": 128, "favicon-32.png": 32, "favicon-192.png": 192}
+SITE_ICO_SIZES = [16, 32, 48]
+
+# iOS ignores alpha on a home-screen icon and composites it onto black,
+# which would swallow the chip's black rim entirely. So this one gets an
+# opaque ground; white, because the mark is drawn as black-on-white and
+# its white details stay inside the rim where they still read.
+APPLE_TOUCH_SIZE = 180
+APPLE_TOUCH_GROUND = (255, 255, 255, 255)
 ALPHA_HOLE = 40          # below this a pixel counts as "nothing drawn here"
 CARD_TOLERANCE = 24      # colour distance still counted as background card
 
@@ -204,6 +227,33 @@ def main() -> int:
                 sizes=[(s, s) for s in ICON_SIZES])
     print(f"wrote {ICON.relative_to(ROOT)} "
           f"({ICON.stat().st_size:,} bytes, sizes {ICON_SIZES})")
+
+    if DOCS.is_dir():
+        for name, size in SITE_PNGS.items():
+            path = DOCS / name
+            square.resize((size, size), Image.LANCZOS).save(
+                path, optimize=True, compress_level=9)
+            print(f"wrote {path.relative_to(ROOT)} "
+                  f"({size}px, {path.stat().st_size:,} bytes)")
+
+        apple = DOCS / "apple-touch-icon.png"
+        ground = Image.new("RGBA", (APPLE_TOUCH_SIZE, APPLE_TOUCH_SIZE),
+                           APPLE_TOUCH_GROUND)
+        ground.alpha_composite(
+            square.resize((APPLE_TOUCH_SIZE, APPLE_TOUCH_SIZE), Image.LANCZOS))
+        ground.convert("RGB").save(apple, optimize=True, compress_level=9)
+        print(f"wrote {apple.relative_to(ROOT)} "
+              f"({APPLE_TOUCH_SIZE}px opaque, {apple.stat().st_size:,} bytes)")
+
+        # Smaller than the app's icon on purpose: a browser never asks
+        # for 256, and the file is fetched on every cold page load.
+        favicon = DOCS / "favicon.ico"
+        square.save(favicon, format="ICO",
+                    sizes=[(s, s) for s in SITE_ICO_SIZES])
+        print(f"wrote {favicon.relative_to(ROOT)} "
+              f"({favicon.stat().st_size:,} bytes, sizes {SITE_ICO_SIZES})")
+    else:
+        print("no docs/ directory -- skipped the site assets")
     return 0
 
 
