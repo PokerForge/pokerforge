@@ -1,16 +1,35 @@
 """server/webhook_server.py -- dormant until deployed with real Stripe/
-SendGrid credentials (see server/README.md), but must behave correctly the
-moment it's ever pointed at a live webhook. Requires this service's own
-dependencies (server/requirements.txt); skips cleanly in the main desktop
-app's dev environment where they aren't installed."""
+SendGrid credentials (see server/README.md), but must behave correctly
+the moment it's pointed at a live webhook. Requires this service's own
+dependencies (server/requirements.txt); skips cleanly in the desktop
+app's dev environment where they aren't installed.
+
+Signing uses a throwaway key generated here, so these tests never touch
+(or embed) the production one."""
+import base64
+import os
+
 import pytest
 
 pytest.importorskip("flask")
 pytest.importorskip("stripe")
 pytest.importorskip("requests")
+pytest.importorskip("cryptography")
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+# Must exist before the server module is imported, since issuing a
+# licence without it is deliberately an error rather than a fallback.
+_TEST_SIGNING_KEY = Ed25519PrivateKey.generate().private_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PrivateFormat.Raw,
+    encryption_algorithm=serialization.NoEncryption())
+os.environ["LICENSE_SIGNING_KEY"] = base64.b64encode(_TEST_SIGNING_KEY).decode()
 
 import core.licensing as lic
 import server.webhook_server as srv
+from server.license_signing import sign_license, verify_license
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +37,6 @@ def _isolated_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "licenses.db")
     monkeypatch.setattr(srv, "STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(srv, "SENDGRID_API_KEY", None)
-    # Issuing a key writes it to Stripe; no test should reach the real API.
     monkeypatch.setattr(srv.stripe.Subscription, "modify", lambda sub_id, **kw: None)
 
 
@@ -29,34 +47,29 @@ def client():
 
 
 def _stripe_obj(data: dict):
-    """Wraps a plain dict as a real stripe.StripeObject (recursively, for
-    nested dicts/lists) -- the actual shape production code receives, and
-    NOT interchangeable with a plain dict: StripeObject supports []
-    indexing and `in` but not .get(), which is exactly the bug this test
-    suite originally missed by using plain dicts throughout (see
-    server/webhook_server.py::_field's docstring)."""
+    """Wraps a dict as a real StripeObject -- the shape production
+    delivers. Not interchangeable with a dict: StripeObject supports []
+    and `in` but not .get(), which is exactly the bug this suite once
+    missed by using plain dicts (see webhook_server._field)."""
     return srv.stripe.StripeObject.construct_from(data, "sk_test_dummy")
 
 
 def _subscription(sub_id="sub_1", status="active", period_end=1_900_000_000):
-    return {"id": sub_id, "status": status, "current_period_end": period_end, "items": {"data": []}}
+    return {"id": sub_id, "status": status, "current_period_end": period_end,
+            "items": {"data": []}}
 
 
 def _mock_retrieve(monkeypatch, subscription):
-    monkeypatch.setattr(srv.stripe.Subscription, "retrieve", lambda sub_id: _stripe_obj(subscription))
+    monkeypatch.setattr(srv.stripe.Subscription, "retrieve",
+                         lambda sub_id, **kw: _stripe_obj(subscription))
 
 
 def _checkout_completed_event(event_id="evt_1", email="customer@example.com",
                                subscription_id="sub_1", customer_id="cus_1"):
-    return {
-        "id": event_id,
-        "type": "checkout.session.completed",
-        "data": {"object": {
-            "customer_details": {"email": email},
-            "customer": customer_id,
-            "subscription": subscription_id,
-        }},
-    }
+    return {"id": event_id, "type": "checkout.session.completed",
+            "data": {"object": {"customer_details": {"email": email},
+                                "customer": customer_id,
+                                "subscription": subscription_id}}}
 
 
 def _post_event(client, event, monkeypatch):
@@ -69,211 +82,164 @@ def _license_row(subscription_id="sub_1"):
     conn = srv._db()
     row = conn.execute(
         "SELECT license_key, email, status, current_period_end FROM licenses "
-        "WHERE stripe_subscription_id = ?", (subscription_id,)
-    ).fetchone()
+        "WHERE stripe_subscription_id = ?", (subscription_id,)).fetchone()
     conn.close()
     return row
 
+
+# --- webhook ----------------------------------------------------------
 
 def test_rejects_a_request_with_an_invalid_signature(client, monkeypatch):
     def _raise(*a, **kw):
         raise srv.stripe.error.SignatureVerificationError("bad sig", "sig_header")
     monkeypatch.setattr(srv.stripe.Webhook, "construct_event", _raise)
 
-    resp = client.post("/webhook/stripe", data=b"{}", headers={"Stripe-Signature": "bogus"})
+    assert client.post("/webhook/stripe", data=b"{}",
+                       headers={"Stripe-Signature": "bogus"}).status_code == 400
 
-    assert resp.status_code == 400
 
-
-def test_checkout_completed_issues_a_valid_key_and_activates_the_license(client, monkeypatch):
+def test_checkout_issues_a_signed_licence_for_the_subscription(client, monkeypatch):
     _mock_retrieve(monkeypatch, _subscription())
 
-    resp = _post_event(client, _checkout_completed_event(), monkeypatch)
+    assert _post_event(client, _checkout_completed_event(), monkeypatch).status_code == 200
 
-    assert resp.status_code == 200
-    key, email, status, expires_at = _license_row()
+    token, email, status, expires_at = _license_row()
     assert email == "customer@example.com"
-    assert lic.validate_license_key(key)
     assert status == "active"
     assert expires_at == srv._period_end_iso(1_900_000_000)
 
+    payload = verify_license(token)
+    assert payload is not None, "issued licence must carry a genuine signature"
+    assert payload["s"] == "sub_1"
+    assert payload["e"] == expires_at
 
-def test_status_endpoint_reports_a_freshly_issued_license_as_valid(client, monkeypatch):
-    _mock_retrieve(monkeypatch, _subscription(period_end=1_900_000_000))
+
+def test_the_issued_licence_is_recorded_on_the_stripe_subscription(client, monkeypatch):
+    _mock_retrieve(monkeypatch, _subscription())
+    recorded = {}
+    monkeypatch.setattr(srv.stripe.Subscription, "modify",
+                         lambda sub_id, **kw: recorded.update({"id": sub_id, **kw}))
+
     _post_event(client, _checkout_completed_event(), monkeypatch)
-    key = _license_row()[0]
 
-    body = client.get(f"/license/status?key={key}").get_json()
-
-    assert body["valid"] is True
-    assert body["expires_at"] == srv._period_end_iso(1_900_000_000)
+    assert recorded["id"] == "sub_1"
+    assert recorded["metadata"][srv.LICENSE_KEY_METADATA] == _license_row()[0]
 
 
-def test_retried_checkout_completed_does_not_issue_a_second_key(client, monkeypatch):
+def test_a_retried_checkout_does_not_issue_a_second_licence(client, monkeypatch):
     _mock_retrieve(monkeypatch, _subscription())
     event = _checkout_completed_event()
 
     _post_event(client, event, monkeypatch)
-    first_key = _license_row()[0]
-    _post_event(client, event, monkeypatch)  # Stripe redelivering the same event id
+    first = _license_row()[0]
+    _post_event(client, event, monkeypatch)
 
     conn = srv._db()
-    count = conn.execute(
-        "SELECT COUNT(*) FROM licenses WHERE stripe_subscription_id = 'sub_1'"
-    ).fetchone()[0]
+    count = conn.execute("SELECT COUNT(*) FROM licenses").fetchone()[0]
     conn.close()
     assert count == 1
-    assert _license_row()[0] == first_key
+    assert _license_row()[0] == first
 
 
-def test_invoice_paid_extends_the_existing_key_without_issuing_a_new_one(client, monkeypatch):
+def test_checkout_without_a_period_end_issues_nothing(client, monkeypatch):
+    """Better to issue no licence than one that expires immediately."""
+    _mock_retrieve(monkeypatch, {"id": "sub_1", "status": "active",
+                                  "current_period_end": None, "items": {"data": []}})
+
+    assert _post_event(client, _checkout_completed_event(), monkeypatch).status_code == 200
+    assert _license_row() is None
+
+
+def test_checkout_with_no_subscription_or_email_is_skipped(client, monkeypatch):
+    no_sub = {"id": "e1", "type": "checkout.session.completed",
+              "data": {"object": {"customer_details": {"email": "x@example.com"}}}}
+    assert _post_event(client, no_sub, monkeypatch).status_code == 200
+
+    _mock_retrieve(monkeypatch, _subscription())
+    no_email = _checkout_completed_event(event_id="e2")
+    no_email["data"]["object"]["customer_details"] = None
+    assert _post_event(client, no_email, monkeypatch).status_code == 200
+    assert _license_row() is None
+
+
+def test_invoice_paid_records_the_extended_period(client, monkeypatch):
     _mock_retrieve(monkeypatch, _subscription(period_end=1_700_000_000))
     _post_event(client, _checkout_completed_event(), monkeypatch)
-    original_key = _license_row()[0]
+    issued = _license_row()[0]
 
-    _mock_retrieve(monkeypatch, _subscription(period_end=1_900_000_000))  # renewed further out
-    invoice_event = {
-        "id": "evt_invoice_1",
-        "type": "invoice.paid",
-        "data": {"object": {"subscription": "sub_1"}},
-    }
-    _post_event(client, invoice_event, monkeypatch)
+    _mock_retrieve(monkeypatch, _subscription(period_end=1_900_000_000))
+    _post_event(client, {"id": "evt_inv", "type": "invoice.paid",
+                         "data": {"object": {"subscription": "sub_1"}}}, monkeypatch)
 
-    key, _, status, expires_at = _license_row()
-    assert key == original_key
+    token, _, status, expires_at = _license_row()
+    assert token == issued          # the app fetches an extended one on refresh
     assert status == "active"
     assert expires_at == srv._period_end_iso(1_900_000_000)
 
 
-def test_subscription_deleted_marks_the_license_invalid(client, monkeypatch):
-    _mock_retrieve(monkeypatch, _subscription())
-    _post_event(client, _checkout_completed_event(), monkeypatch)
-    key = _license_row()[0]
-
-    canceled_event = {
-        "id": "evt_cancel_1",
-        "type": "customer.subscription.deleted",
-        "data": {"object": {"id": "sub_1", "status": "canceled", "current_period_end": 1_900_000_000}},
-    }
-    _post_event(client, canceled_event, monkeypatch)
-
-    body = client.get(f"/license/status?key={key}").get_json()
-    assert body["valid"] is False
-
-
-def test_period_end_falls_back_to_line_item_when_absent_at_top_level(client, monkeypatch):
-    """A defensive case for Stripe's own API version migration -- some
-    accounts no longer carry current_period_end on the Subscription
-    itself, only on its line items (see _subscription_period_end)."""
-    subscription = {"id": "sub_1", "status": "active", "current_period_end": None,
-                     "items": {"data": [{"current_period_end": 1_900_000_000}]}}
-    _mock_retrieve(monkeypatch, subscription)
-
-    _post_event(client, _checkout_completed_event(), monkeypatch)
-
-    assert _license_row()[3] == srv._period_end_iso(1_900_000_000)
-
-
-def test_checkout_completed_with_no_subscription_id_is_skipped_without_error(client, monkeypatch):
-    event = {
-        "id": "evt_no_sub",
-        "type": "checkout.session.completed",
-        "data": {"object": {"customer_details": {"email": "x@example.com"}}},
-    }
-
-    resp = _post_event(client, event, monkeypatch)
-
-    assert resp.status_code == 200
-
-
-def test_checkout_completed_with_no_customer_email_is_skipped_without_error(client, monkeypatch):
-    _mock_retrieve(monkeypatch, _subscription())
-    event = _checkout_completed_event()
-    event["data"]["object"]["customer_details"] = None
-
-    resp = _post_event(client, event, monkeypatch)
-
-    assert resp.status_code == 200
-    assert _license_row() is None
-
-
 def test_ignores_event_types_it_does_not_handle(client, monkeypatch):
-    other_event = {"id": "evt_x", "type": "payment_intent.created", "data": {"object": {}}}
-
-    resp = _post_event(client, other_event, monkeypatch)
-
-    assert resp.status_code == 200
+    resp = _post_event(client, {"id": "e", "type": "payment_intent.created",
+                                 "data": {"object": {}}}, monkeypatch)
     assert resp.get_json()["status"] == "ignored"
 
 
-def test_issuing_a_key_records_it_on_the_stripe_subscription(client, monkeypatch):
-    """Stripe is the durable record -- the ledger is only a cache, so the
-    key must also land in subscription metadata (see _rebuild_from_stripe)."""
-    _mock_retrieve(monkeypatch, _subscription())
-    modified = {}
-    monkeypatch.setattr(srv.stripe.Subscription, "modify",
-                         lambda sub_id, **kw: modified.update({"id": sub_id, **kw}))
+# --- refresh ----------------------------------------------------------
 
-    _post_event(client, _checkout_completed_event(), monkeypatch)
+def test_refresh_extends_a_licence_for_an_active_subscription(client, monkeypatch):
+    old_token = sign_license("sub_1", "2026-01-01")
+    _mock_retrieve(monkeypatch, _subscription(period_end=1_900_000_000))
 
-    issued_key = _license_row()[0]
-    assert modified["id"] == "sub_1"
-    assert modified["metadata"][srv.LICENSE_KEY_METADATA] == issued_key
-
-
-def test_status_rebuilds_a_lost_ledger_entry_from_stripe(client, monkeypatch):
-    """The exact scenario a redeploy causes: the ledger file is gone, but
-    a paying customer's key must keep working."""
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    sub = _stripe_obj({
-        "id": "sub_restored", "status": "active", "current_period_end": 1_900_000_000,
-        "customer": "cus_restored", "items": {"data": []},
-        "metadata": {srv.LICENSE_KEY_METADATA: key},
-    })
-    monkeypatch.setattr(srv.stripe, "api_key", "sk_test_dummy")
-    monkeypatch.setattr(srv.stripe.Subscription, "list",
-                         lambda **kw: _FakeList([sub]))
-
-    body = client.get(f"/license/status?key={key}").get_json()
+    body = client.get("/license/refresh", query_string={"token": old_token}).get_json()
 
     assert body["valid"] is True
-    assert body["expires_at"] == srv._period_end_iso(1_900_000_000)
-    # and it's cached locally afterwards, so the next check needs no API call
-    conn = srv._db()
-    row = conn.execute("SELECT stripe_subscription_id FROM licenses WHERE license_key = ?", (key,)).fetchone()
-    conn.close()
-    assert row[0] == "sub_restored"
+    payload = verify_license(body["token"])
+    assert payload["e"] == srv._period_end_iso(1_900_000_000)
+    assert payload["e"] != "2026-01-01", "the licence should have moved forward"
 
 
-def test_status_does_not_scan_stripe_for_a_malformed_key(client, monkeypatch):
-    """A junk key shouldn't be able to trigger a walk of the customer list."""
+def test_refresh_declines_a_cancelled_subscription(client, monkeypatch):
+    token = sign_license("sub_1", "2026-01-01")
+    _mock_retrieve(monkeypatch, _subscription(status="canceled"))
+
+    body = client.get("/license/refresh", query_string={"token": token}).get_json()
+
+    assert body["valid"] is False
+    assert "token" not in body
+
+
+def test_refresh_declines_an_unsigned_token(client, monkeypatch):
+    """Without this the endpoint would hand out a genuine licence to
+    anyone who made up a token naming a real subscription."""
     called = []
-    monkeypatch.setattr(srv.stripe, "api_key", "sk_test_dummy")
-    monkeypatch.setattr(srv.stripe.Subscription, "list",
-                         lambda **kw: called.append(1) or _FakeList([]))
+    monkeypatch.setattr(srv.stripe.Subscription, "retrieve",
+                         lambda sub_id, **kw: called.append(sub_id))
 
-    body = client.get("/license/status?key=not-a-real-key").get_json()
+    forged = "PF1." + base64.urlsafe_b64encode(b'{"e":"2099-01-01","s":"sub_1"}').decode().rstrip("=") + ".bm90YXNpZw"
+    body = client.get("/license/refresh", query_string={"token": forged}).get_json()
 
     assert body["valid"] is False
-    assert called == []
+    assert called == [], "an unverified token must not even reach Stripe"
 
 
-class _FakeList:
-    def __init__(self, items):
-        self._items = items
-
-    def auto_paging_iter(self):
-        return iter(self._items)
+def test_refresh_declines_junk(client):
+    for junk in ["", "rubbish", "PF1.a.b"]:
+        assert client.get("/license/refresh", query_string={"token": junk}).get_json()["valid"] is False
 
 
-def test_status_endpoint_reports_an_unknown_key_as_invalid(client):
-    resp = client.get("/license/status?key=PF-DOES-NOT-EXIST")
-    body = resp.get_json()
-    assert body["valid"] is False
-    assert body["expires_at"] is None
+def test_a_refreshed_licence_is_accepted_by_the_app(client, monkeypatch):
+    """End to end: what the server signs, core/licensing.py verifies."""
+    monkeypatch.setattr(lic, "LICENSE_PUBLIC_KEY", base64.b64encode(
+        Ed25519PrivateKey.from_private_bytes(_TEST_SIGNING_KEY).public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw)).decode())
+    _mock_retrieve(monkeypatch, _subscription(period_end=1_900_000_000))
+
+    body = client.get("/license/refresh",
+                      query_string={"token": sign_license("sub_1", "2026-01-01")}).get_json()
+
+    assert lic.validate_license_key(body["token"]) is True
+    assert lic.license_expiry(body["token"]).isoformat() == srv._period_end_iso(1_900_000_000)
 
 
 def test_healthz_reports_ok(client):
-    resp = client.get("/healthz")
-    assert resp.status_code == 200
-    assert resp.get_json()["status"] == "ok"
+    assert client.get("/healthz").get_json()["status"] == "ok"

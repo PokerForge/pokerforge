@@ -1,29 +1,28 @@
-"""Stripe webhook receiver for PokerForge's subscription license. Dormant
-until deployed and given real Stripe/SendGrid credentials -- see README.md.
-A separate, standalone service: the desktop app never imports or starts
-it, it only ever calls GET /license/status (see
-core/licensing.py::refresh_license_status), and only once a paid key has
-already been entered.
+"""Stripe webhook receiver for PokerForge's subscription licences.
+Dormant until deployed and given real Stripe/SendGrid credentials -- see
+README.md. A separate, standalone service: the desktop app never imports
+or starts it, it only ever calls GET /license/refresh (see
+core/licensing.py::refresh_license_status), and only once a customer has
+entered a licence.
 
-Reuses core.licensing.generate_license_key so every key this server issues
-validates against the exact same checksum the shipped app already checks --
-there is deliberately only one place that secret lives.
+Licences are Ed25519-signed tokens carrying the subscription they belong
+to and the date it is paid up to (server/license_signing.py). The private
+key lives only here; the app ships the public half and can verify but
+never mint. That also means the ledger below isn't load-bearing -- a
+licence proves itself, and /license/refresh reads subscription state
+straight from Stripe -- so losing the database file costs nothing a
+customer would notice.
 
 Subscription lifecycle, as three kinds of Stripe event:
-- checkout.session.completed -- first payment. Issues + emails a new key,
-  tied to the subscription's id.
-- invoice.paid -- a renewal. Same key, just extends current_period_end.
+- checkout.session.completed -- first payment. Signs and emails a
+  licence for the new subscription.
+- invoice.paid -- a renewal. Records the later paid-through date; the
+  app picks up an extended licence on its next refresh.
 - customer.subscription.updated / .deleted -- cancellation, a failed
-  payment, etc. Updates status/current_period_end from Stripe's own
-  subscription object; no new key, no email.
-
-/license/status is what the desktop app actually calls: given a key, is
-its subscription currently paid-through, and until when.
+  payment, etc. Updates the recorded status.
 """
 import os
-import secrets
 import sqlite3
-import string
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,8 +31,12 @@ import requests
 import stripe
 from flask import Flask, request, jsonify
 
+# Both entries matter: gunicorn runs this with server/ as the working
+# directory, while the tests import it as server.webhook_server from the
+# repo root. Adding both makes the sibling import work either way.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core.licensing import generate_license_key, validate_license_key  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from license_signing import sign_license, verify_license  # noqa: E402
 
 app = Flask(__name__)
 
@@ -43,34 +46,14 @@ SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL", "licenses@pokerforge.app")
 DB_PATH = Path(os.environ.get("LICENSE_LEDGER_PATH") or Path(__file__).resolve().parent / "licenses.db")
 
-# Where a subscription's issued license key is stored on the Stripe
-# Subscription object. Stripe is the durable record -- see
-# _handle_checkout_completed and _rebuild_from_stripe.
+# Where a subscription's issued licence is recorded on the Stripe
+# Subscription object, so support can see what a customer was sent.
 LICENSE_KEY_METADATA = "pokerforge_license_key"
-
-# How many subscriptions a ledger-miss lookup will scan before giving up,
-# so one junk key can't walk an unbounded customer list.
-_REBUILD_SCAN_LIMIT = 1000
 
 # Statuses (mirroring Stripe's own Subscription.status) that still count as
 # entitled -- current_period_end is the real gate either way, this just
 # excludes states where Stripe has already given up on collecting.
 _ACTIVE_STATUSES = {"active", "trialing", "past_due"}
-
-# Excludes visually-ambiguous characters (0/O, 1/I/L) since a customer may
-# have to retype this by hand from an email -- matches
-# scripts/generate_license_key.py's manual-issuance equivalent.
-_ALPHABET = "".join(c for c in string.ascii_uppercase + string.digits if c not in "01OIL")
-
-
-def _random_group(length: int = 5) -> str:
-    return "".join(secrets.choice(_ALPHABET) for _ in range(length))
-
-
-def _new_key() -> str:
-    body = f"PF-{_random_group()}-{_random_group()}-{_random_group()}"
-    return generate_license_key(body)
-
 
 def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -181,14 +164,16 @@ def _handle_checkout_completed(conn: sqlite3.Connection, event) -> None:
         return
 
     subscription = stripe.Subscription.retrieve(subscription_id)
-    key = _new_key()
+    expires_at = _period_end_iso(_subscription_period_end(subscription))
+    if not expires_at:
+        app.logger.error("subscription %s has no period end; not signing a licence",
+                         subscription_id)
+        return
+    key = sign_license(subscription_id, expires_at)
 
-    # Write the key to Stripe BEFORE recording or emailing it. Stripe is
-    # the durable record; the ledger below is only a cache (this service
-    # runs on an ephemeral filesystem, so the file does not survive a
-    # redeploy). Doing this first means a failure here raises before the
-    # key is emailed, so Stripe's retry re-issues cleanly rather than
-    # leaving a customer holding a key nothing has a record of.
+    # Record the issued licence against the subscription. Support can
+    # then see what a customer was sent; the licence itself doesn't
+    # depend on this, since it carries its own signed expiry.
     stripe.Subscription.modify(subscription_id, metadata={LICENSE_KEY_METADATA: key})
 
     conn.execute(
@@ -196,7 +181,7 @@ def _handle_checkout_completed(conn: sqlite3.Connection, event) -> None:
         "status, current_period_end, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
         (key, email, _field(session, "customer"), subscription_id,
-         subscription["status"], _period_end_iso(_subscription_period_end(subscription))),
+         subscription["status"], expires_at),
     )
     _send_license_email(email, key)
 
@@ -265,66 +250,46 @@ def stripe_webhook():
     return jsonify(status="ok"), 200
 
 
-def _rebuild_from_stripe(conn: sqlite3.Connection, key: str):
-    """Repopulates one ledger row from Stripe, which holds the durable
-    copy of every issued key (see _handle_checkout_completed). Without
-    this, losing the ledger file -- which happens on every redeploy, as
-    the filesystem is ephemeral -- would silently invalidate the key of
-    every paying customer, with no way to reconstruct who owned what.
+@app.route("/license/refresh", methods=["GET"])
+def license_refresh():
+    """Where the desktop app asks for a licence with a later expiry.
 
-    Returns (status, current_period_end) if found, else None."""
-    if not stripe.api_key:
-        return None
+    This is how a renewal reaches a customer, and how a cancellation
+    eventually bites: the server simply stops extending, and the licence
+    lapses at the date it was last paid up to.
+
+    Stripe is consulted directly rather than the local ledger, so losing
+    the ledger file (this runs on an ephemeral filesystem) costs nothing
+    a customer would notice."""
+    payload = verify_license(request.args.get("token", ""))
+    if not payload:
+        # Unsigned, edited, or simply not ours.
+        return jsonify(valid=False), 200
+
+    subscription_id = payload.get("s")
     try:
-        scanned = 0
-        for sub in stripe.Subscription.list(status="all", limit=100).auto_paging_iter():
-            scanned += 1
-            if scanned > _REBUILD_SCAN_LIMIT:
-                app.logger.warning("Gave up rebuilding a license after %s subscriptions", scanned)
-                return None
-            if _field(_field(sub, "metadata"), LICENSE_KEY_METADATA) != key:
-                continue
-            status = sub["status"]
-            expires_at = _period_end_iso(_subscription_period_end(sub))
-            # email is deliberately left null: it isn't part of the
-            # licensing decision, and Stripe remains the record of who
-            # the customer is.
-            conn.execute(
-                "INSERT OR REPLACE INTO licenses (license_key, email, stripe_customer_id, "
-                "stripe_subscription_id, status, current_period_end, created_at, updated_at) "
-                "VALUES (?, NULL, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-                (key, _field(sub, "customer"), sub["id"], status, expires_at),
-            )
-            conn.commit()
-            app.logger.info("Rebuilt license %s from Stripe subscription %s", key, sub["id"])
-            return status, expires_at
+        subscription = stripe.Subscription.retrieve(subscription_id)
     except Exception:
-        app.logger.exception("Could not rebuild license from Stripe")
-    return None
+        app.logger.exception("could not load subscription %s", subscription_id)
+        return jsonify(valid=False), 200
 
+    status = subscription["status"]
+    expires_at = _period_end_iso(_subscription_period_end(subscription))
+    if status not in _ACTIVE_STATUSES or not expires_at:
+        return jsonify(valid=False), 200
 
-@app.route("/license/status", methods=["GET"])
-def license_status():
-    key = request.args.get("key", "")
     conn = _db()
     try:
-        row = conn.execute(
-            "SELECT status, current_period_end FROM licenses WHERE license_key = ?", (key,)
-        ).fetchone()
-        # A miss usually means the ledger cache was lost, not that the key
-        # is fake -- so check Stripe before calling it invalid. Only for
-        # well-formed keys, so junk can't trigger a customer-list scan.
-        if not row and validate_license_key(key):
-            row = _rebuild_from_stripe(conn, key)
+        conn.execute(
+            "UPDATE licenses SET status = ?, current_period_end = ?, "
+            "updated_at = datetime('now') WHERE stripe_subscription_id = ?",
+            (status, expires_at, subscription_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 
-    if not row:
-        return jsonify(valid=False, expires_at=None), 200
-
-    status, expires_at = row
-    valid = status in _ACTIVE_STATUSES and bool(expires_at)
-    return jsonify(valid=valid, expires_at=expires_at), 200
+    return jsonify(valid=True, token=sign_license(subscription_id, expires_at)), 200
 
 
 if __name__ == "__main__":

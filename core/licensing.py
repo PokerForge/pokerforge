@@ -1,34 +1,39 @@
-"""License-key scaffolding for the subscription paid tier — currently a
-no-op (LICENSE_ENFORCED is False, so is_licensed() always returns True and
-nothing in the app is gated, and refresh_license_status() makes no network
-call at all). This exists so that once server/ is deployed and given real
-Stripe/SendGrid credentials, turning enforcement on is a one-line flip here
-rather than a rewrite of whatever code needs to check it.
+"""Licence verification for the subscription paid tier — currently a
+no-op (LICENSE_ENFORCED is False, so is_licensed() always returns True,
+nothing in the app is gated, and refresh_license_status() makes no
+network call at all). Flipping that one flag is what turns enforcement
+on once you're ready to charge.
 
-Key format/checksum (generate_license_key/validate_license_key) is NOT
-real DRM — _CHECKSUM_SECRET lives in the shipped app, so anyone willing to
-read the bytecode/binary can forge a key that passes validate_license_key()
-on its own. What actually enforces a *subscription* (as opposed to a
-one-time key) is refresh_license_status() below, which asks the license
-server whether a key's subscription is still paid-through — a forged key
-that was never issued by the server will simply come back invalid the
-first time the app can reach the server, same as an offline-only forged
-key would for anyone reading the source. Do not rely on any of this for a
-real security boundary — it's a soft, honesty-based gate appropriate for a
-small indie app.
+Licences are Ed25519-signed tokens:
+
+    PF1.<base64url payload>.<base64url signature>
+
+with the payload carrying the subscription it belongs to and the date it
+is paid up to. This module only ever *verifies* them, using the public
+key below — signing happens on the licence server
+(server/license_signing.py), and the private key never leaves it. That
+asymmetry is the point: this file, and the shipped app around it, can be
+read freely without giving anyone the ability to mint a licence.
+
+It also means the expiry date can be trusted offline. Because the date is
+inside the signed payload rather than sitting in local settings, the app
+can honour a licence without contacting anything — a forged or edited
+token simply fails verification.
 
 Networking: refresh_license_status() is the ONE exception to this app's
 "no network calls unless you ask" stance (see PRIVACY_POLICY.md and
-core/update_checker.py's docstring) — and even then, only for someone who
-has already entered a paid license key (see ui/app_window.py, which only
-calls it when get_license_key() is set). A free-tier user who never enters
-a key causes zero network calls, exactly as before."""
-import hashlib
+core/update_checker.py's docstring), and only for someone who has
+already entered a licence. A free-tier user causes no network calls at
+all."""
+import base64
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, timedelta
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from config.settings import (
     get_license_key, set_license_key,
@@ -38,125 +43,138 @@ from config.settings import (
 
 LICENSE_ENFORCED = False
 
-# Keys look like "PF-XXXXX-XXXXX-XXXXX-CC" where CC is a 2-character
-# checksum of the preceding characters — catches typos/made-up keys
-# without needing a server round-trip. Change this string (and every
-# previously-issued key) if it's ever believed to have leaked.
-_CHECKSUM_SECRET = "pokerforge-license-v1"
+# Verifies signatures; cannot create them. Safe to ship and safe to read.
+# Its private counterpart lives only on the licence server — rotating the
+# pair invalidates every issued licence, so treat it as permanent.
+LICENSE_PUBLIC_KEY = "dXu4gyw7Cq+/IACLSNlAOyjuOb7Sm1mvbDYcevXcMmc="
 
+# Scheme version, so a future change can be told apart from this one
+# rather than silently failing.
+TOKEN_PREFIX = "PF1"
 
-def _checksum(body: str) -> str:
-    digest = hashlib.sha256((_CHECKSUM_SECRET + body).encode("utf-8")).hexdigest()
-    return digest[:2].upper()
+# How long a licence keeps working past the date it's paid up to. This
+# covers the gap between a subscription renewing and the app next
+# managing to fetch the extended token — someone offline for a fortnight
+# after their renewal shouldn't be locked out. It can afford to be
+# generous now that expiry is signed: unlike a checksum scheme, extra
+# grace can't be farmed by minting fresh tokens, because minting is
+# impossible without the private key.
+LICENSE_GRACE_DAYS = 14
 
-
-def generate_license_key(body: str) -> str:
-    """Builds a well-formed key from a chosen body (e.g. "PF-A1B2C-C3D4E-F5G6H")
-    by appending the correct checksum. Used both by scripts/generate_license_key.py
-    (manual issuance) and server/webhook_server.py (automatic issuance) — the
-    two are deliberately interchangeable, same checksum secret either way."""
-    return f"{body}-{_checksum(body)}"
-
-
-def validate_license_key(key: str) -> bool:
-    """Format + checksum check only — does not contact any server. A
-    well-formed key is accepted whether or not it was ever issued by
-    server/webhook_server.py; is_licensed() layers the real subscription
-    check (refresh_license_status's cached result) on top of this."""
-    key = (key or "").strip().upper()
-    if not key.startswith("PF-") or "-" not in key[3:]:
-        return False
-    body, _, checksum = key.rpartition("-")
-    if len(checksum) != 2:
-        return False
-    return _checksum(body) == checksum
-
-
-# Where the deployed license server (server/webhook_server.py) lives.
-# refresh_license_status() is a no-op while LICENSE_ENFORCED is False,
-# same as everything else here, so this being set doesn't yet cause any
-# network activity on its own.
+# Where the deployed licence server (server/webhook_server.py) lives.
 LICENSE_SERVER_URL: str | None = "https://pokerforge-license-server.onrender.com"
 
-# How many days of "couldn't reach the server" a subscriber's cached
-# expiry is trusted past its face value before locking back to free tier.
-# Covers both a temporarily offline app and a subscription that just
-# renewed but hasn't been re-checked yet — see is_licensed()'s docstring.
-LICENSE_STATUS_GRACE_DAYS = 14
+
+def _b64url_decode(segment: str) -> bytes:
+    padding = "=" * (-len(segment) % 4)
+    return base64.urlsafe_b64decode(segment + padding)
 
 
-def activate_key(key: str) -> None:
-    """Called right after a user enters a key in the License dialog —
-    persists it and grants a provisional grace window immediately (today,
-    which combined with is_licensed()'s own +LICENSE_STATUS_GRACE_DAYS
-    means a correctly-formatted key works right away even if the very
-    first server check (kicked off right after this — see
-    ui/app_window.py) can't complete straight away, e.g. briefly offline.
-    A key that was never actually issued gets rejected the moment that
-    check does succeed — see refresh_license_status()."""
-    set_license_key(key)
-    set_license_expires_at(date.today().isoformat())
+def verify_license_key(token: str) -> dict | None:
+    """Returns the token's payload if its signature is genuine, else
+    None. Everything downstream depends on this: an unverified token is
+    treated exactly like no licence at all."""
+    parts = (token or "").strip().split(".")
+    if len(parts) != 3 or parts[0] != TOKEN_PREFIX:
+        return None
+    _, payload_segment, signature_segment = parts
+
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(LICENSE_PUBLIC_KEY))
+        public_key.verify(_b64url_decode(signature_segment),
+                          payload_segment.encode("ascii"))
+        payload = json.loads(_b64url_decode(payload_segment))
+    except (InvalidSignature, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+    return payload if isinstance(payload, dict) else None
+
+
+def validate_license_key(token: str) -> bool:
+    """Whether a token is genuine. Used by the licence dialog to reject
+    a mistyped or made-up entry before saving it."""
+    return verify_license_key(token) is not None
+
+
+def license_expiry(token: str) -> date | None:
+    """The date a verified token is paid up to, or None if the token
+    isn't genuine or carries no usable date."""
+    payload = verify_license_key(token)
+    if not payload:
+        return None
+    try:
+        return date.fromisoformat(str(payload.get("e", ""))[:10])
+    except ValueError:
+        return None
+
+
+def activate_key(token: str) -> bool:
+    """Stores a licence entered by the user. Returns False (storing
+    nothing) if the token isn't genuine.
+
+    Unlike a checksum scheme there's no need to optimistically grant
+    access pending a server check: the expiry is inside the signed
+    payload, so a genuine token is proof of entitlement on its own, and
+    a forged one can't get this far."""
+    expiry = license_expiry(token)
+    if expiry is None:
+        return False
+    set_license_key(token.strip())
+    set_license_expires_at(expiry.isoformat())
+    return True
 
 
 def refresh_license_status(timeout: float = 5.0) -> bool:
-    """Asks the license server whether the currently-entered key's
-    subscription is still paid-through, and caches the answer
-    (get_license_expires_at) for is_licensed() to use offline. Returns
-    True if the server was actually reached (regardless of its verdict),
-    False if the check couldn't be attempted or the network call failed —
-    callers use this only to decide whether to warn about connectivity,
-    never as the licensing decision itself (that's is_licensed()).
+    """Asks the licence server for a token with an extended expiry,
+    which is how a renewal reaches the app, and how a cancellation
+    eventually stops it working (the server simply stops extending).
 
-    A no-op — network-free — unless LICENSE_ENFORCED, a server URL is
-    configured, AND a key is actually set. This is what keeps the app's
-    "no network calls unless you ask" stance true for every free-tier
-    user who never enters a key."""
+    Returns True if the server was reached, False otherwise — callers
+    use that only to decide whether to mention connectivity, never as
+    the licensing decision itself, which is is_licensed().
+
+    Network-free unless LICENSE_ENFORCED, a server URL is configured,
+    and a licence is actually present."""
     if not LICENSE_ENFORCED or not LICENSE_SERVER_URL:
         return False
-    key = get_license_key()
-    if not key:
+    token = get_license_key()
+    if not token:
         return False
 
-    url = f"{LICENSE_SERVER_URL.rstrip('/')}/license/status?key={urllib.parse.quote(key)}"
+    url = (f"{LICENSE_SERVER_URL.rstrip('/')}/license/refresh"
+           f"?token={urllib.parse.quote(token)}")
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return False
 
     set_license_last_checked_at(date.today().isoformat())
-    if data.get("valid") and data.get("expires_at"):
-        set_license_expires_at(data["expires_at"])
-    else:
-        # An explicit "no" from the server (never issued, or subscription
-        # canceled and past its paid-through date) — reject outright
-        # rather than granting a grace period on top of a real answer.
+
+    refreshed = data.get("token")
+    if refreshed and activate_key(refreshed):
+        return True
+
+    # Reached the server and it declined to renew — the subscription is
+    # gone. Drop the cached expiry so access lapses now rather than
+    # riding out a grace period it hasn't earned.
+    if data.get("valid") is False:
         set_license_expires_at(None)
     return True
 
 
 def is_licensed() -> bool:
-    """While LICENSE_ENFORCED is off: always True (today). Once on: a
-    well-formed key AND a cached expiry (from activate_key's provisional
-    value, or a real one from refresh_license_status) that hasn't passed
-    by more than LICENSE_STATUS_GRACE_DAYS. The grace window is what lets
-    a genuinely active subscriber keep working through a spotty-internet
-    day or the gap between a renewal and the app's next check-in, while
-    still locking a truly canceled subscription back to free tier within
-    two weeks rather than never."""
+    """While LICENSE_ENFORCED is off: always True. Once on: a genuine
+    token whose signed expiry hasn't passed by more than
+    LICENSE_GRACE_DAYS."""
     if not LICENSE_ENFORCED:
         return True
-    if not validate_license_key(get_license_key() or ""):
-        return False
 
-    expires_at = get_license_expires_at()
-    if not expires_at:
+    expiry = license_expiry(get_license_key() or "")
+    if expiry is None:
         return False
-    try:
-        expiry = date.fromisoformat(expires_at[:10])
-    except ValueError:
-        return False
-    return date.today() <= expiry + timedelta(days=LICENSE_STATUS_GRACE_DAYS)
+    return date.today() <= expiry + timedelta(days=LICENSE_GRACE_DAYS)
 
 
 # Free-tier stake ceiling. Cash: up to and including 5NL (a 5-cent big

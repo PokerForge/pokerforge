@@ -1,11 +1,19 @@
 """core/licensing.py — currently inert (LICENSE_ENFORCED is False) but
 must behave correctly the moment enforcement is flipped on, since that's
-the whole point of building this ahead of actually needing it."""
+the whole point of building it ahead of needing it.
+
+Licences are Ed25519-signed tokens. These tests sign with a throwaway
+keypair generated per-test rather than the real one, so they prove the
+verification logic without depending on (or embedding) the production
+signing key."""
+import base64
 import json
 import urllib.error
 from datetime import date, timedelta
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import core.licensing as lic
 import config.settings as settings_mod
@@ -16,147 +24,143 @@ def _isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_mod, "SETTINGS_PATH", tmp_path / "settings.json")
 
 
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+@pytest.fixture()
+def sign(monkeypatch):
+    """Returns a function that mints licences the app will accept, by
+    pointing LICENSE_PUBLIC_KEY at a keypair created just for this test."""
+    private = Ed25519PrivateKey.generate()
+    public_raw = private.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw)
+    monkeypatch.setattr(lic, "LICENSE_PUBLIC_KEY", base64.b64encode(public_raw).decode())
+
+    def _sign(expires="2099-01-01", subscription="sub_test"):
+        payload = {"e": expires, "s": subscription}
+        segment = _b64url(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
+        return f"PF1.{segment}.{_b64url(private.sign(segment.encode('ascii')))}"
+
+    return _sign
+
+
+# --- verification -----------------------------------------------------
+
+def test_a_signed_licence_verifies(sign):
+    token = sign()
+    assert lic.validate_license_key(token) is True
+    assert lic.verify_license_key(token) == {"e": "2099-01-01", "s": "sub_test"}
+
+
+def test_a_tampered_payload_is_rejected(sign):
+    """Editing the expiry to buy more time must invalidate the signature —
+    this is the property the whole scheme rests on."""
+    prefix, payload, signature = sign(expires="2026-01-01").split(".")
+    forged_payload = _b64url(json.dumps({"e": "2099-01-01", "s": "sub_test"},
+                                         separators=(",", ":"), sort_keys=True).encode())
+    assert lic.validate_license_key(f"{prefix}.{forged_payload}.{signature}") is False
+
+
+def test_a_licence_signed_by_the_wrong_key_is_rejected(sign):
+    sign()                                    # installs this test's public key
+    other = Ed25519PrivateKey.generate()      # ...but sign with a different one
+    payload = _b64url(json.dumps({"e": "2099-01-01", "s": "x"},
+                                  separators=(",", ":"), sort_keys=True).encode())
+    token = f"PF1.{payload}.{_b64url(other.sign(payload.encode('ascii')))}"
+    assert lic.validate_license_key(token) is False
+
+
+def test_malformed_and_made_up_licences_are_rejected(sign):
+    sign()
+    for junk in ["", "not-a-key", "PF1.abc.def", "PF1.only-two-parts",
+                 "PF-A1B2C-C3D4E-F5G6H-7A", None]:
+        assert lic.validate_license_key(junk) is False
+
+
+def test_expiry_is_read_from_the_signed_payload(sign):
+    assert lic.license_expiry(sign(expires="2027-03-04")) == date(2027, 3, 4)
+    assert lic.license_expiry("rubbish") is None
+
+
+# --- activation -------------------------------------------------------
+
+def test_activating_a_licence_stores_it_with_its_signed_expiry(sign):
+    token = sign(expires="2027-06-30")
+    assert lic.activate_key(token) is True
+    assert settings_mod.get_license_key() == token
+    assert settings_mod.get_license_expires_at() == "2027-06-30"
+
+
+def test_activating_a_forged_licence_stores_nothing(sign):
+    sign()
+    assert lic.activate_key("PF1.forged.nonsense") is False
+    assert settings_mod.get_license_key() is None
+    assert settings_mod.get_license_expires_at() is None
+
+
+# --- the licensing decision -------------------------------------------
+
 def test_is_licensed_always_true_while_unenforced(monkeypatch):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", False)
     settings_mod.set_license_key(None)
     assert lic.is_licensed() is True
 
 
-def test_generated_key_validates(monkeypatch):
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    assert lic.validate_license_key(key) is True
-
-
-def test_tampered_key_fails_validation():
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    tampered = key[:-1] + ("0" if key[-1] != "0" else "1")
-    assert lic.validate_license_key(tampered) is False
-
-
-def test_made_up_key_without_real_checksum_fails():
-    assert lic.validate_license_key("PF-FREE-FOREVER-99") is False
-
-
-def test_malformed_keys_are_rejected():
-    assert lic.validate_license_key("") is False
-    assert lic.validate_license_key("not-a-key") is False
-    assert lic.validate_license_key(None) is False
-
-
-def test_validation_is_case_insensitive():
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    assert lic.validate_license_key(key.lower()) is True
-
-
-def test_is_licensed_when_enforced_checks_stored_key_and_cached_expiry(monkeypatch):
+def test_is_licensed_false_with_no_licence(monkeypatch):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
     settings_mod.set_license_key(None)
     assert lic.is_licensed() is False
 
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
+
+def test_is_licensed_true_for_a_current_licence(monkeypatch, sign):
+    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
+    lic.activate_key(sign(expires=(date.today() + timedelta(days=20)).isoformat()))
     assert lic.is_licensed() is True
 
 
-def test_is_licensed_false_for_a_valid_key_with_no_cached_expiry(monkeypatch):
-    """A well-formed key alone isn't enough -- is_licensed() also needs a
-    cached expiry (from activate_key or a real server check), otherwise a
-    key that was never actually entered through the app (just poked into
-    settings.json directly) would pass forever."""
+def test_is_licensed_true_within_the_grace_period(monkeypatch, sign):
+    """Covers a renewal the app hasn't fetched yet — safe to be generous
+    because the expiry is signed and can't be extended by the user."""
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    settings_mod.set_license_key(key)
-    settings_mod.set_license_expires_at(None)
-
-    assert lic.is_licensed() is False
-
-
-def test_is_licensed_true_within_the_grace_period_past_a_stale_expiry(monkeypatch):
-    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    settings_mod.set_license_key(key)
-    stale = date.today() - timedelta(days=lic.LICENSE_STATUS_GRACE_DAYS)
-    settings_mod.set_license_expires_at(stale.isoformat())
-
+    lapsed = date.today() - timedelta(days=lic.LICENSE_GRACE_DAYS)
+    lic.activate_key(sign(expires=lapsed.isoformat()))
     assert lic.is_licensed() is True
 
 
-def test_is_licensed_false_once_the_grace_period_has_elapsed(monkeypatch):
+def test_is_licensed_false_once_grace_has_elapsed(monkeypatch, sign):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    settings_mod.set_license_key(key)
-    expired = date.today() - timedelta(days=lic.LICENSE_STATUS_GRACE_DAYS + 1)
-    settings_mod.set_license_expires_at(expired.isoformat())
-
+    lapsed = date.today() - timedelta(days=lic.LICENSE_GRACE_DAYS + 1)
+    lic.activate_key(sign(expires=lapsed.isoformat()))
     assert lic.is_licensed() is False
 
 
-def test_should_gate_by_stakes_is_false_while_unenforced(monkeypatch):
+def test_a_forged_licence_poked_straight_into_settings_is_refused(monkeypatch, sign):
+    """The scheme's real job: editing settings.json by hand gets you
+    nothing, because entitlement comes from the signature, not the file."""
+    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
+    sign()
+    settings_mod.set_license_key("PF1.made.up")
+    settings_mod.set_license_expires_at("2099-01-01")
+    assert lic.is_licensed() is False
+
+
+def test_should_gate_by_stakes_is_the_inverse_of_is_licensed(monkeypatch, sign):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", False)
-    settings_mod.set_license_key(None)
     assert lic.should_gate_by_stakes() is False
 
-
-def test_should_gate_by_stakes_when_enforced_and_unlicensed(monkeypatch):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
     settings_mod.set_license_key(None)
     assert lic.should_gate_by_stakes() is True
 
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
+    lic.activate_key(sign(expires=(date.today() + timedelta(days=5)).isoformat()))
     assert lic.should_gate_by_stakes() is False
 
 
-def test_license_key_setting_roundtrips():
-    assert settings_mod.get_license_key() is None
-    settings_mod.set_license_key("PF-TEST")
-    assert settings_mod.get_license_key() == "PF-TEST"
+# --- refreshing against the server ------------------------------------
 
-
-def test_license_expiry_and_last_checked_settings_roundtrip():
-    assert settings_mod.get_license_expires_at() is None
-    assert settings_mod.get_license_last_checked_at() is None
-
-    settings_mod.set_license_expires_at("2027-01-15")
-    settings_mod.set_license_last_checked_at("2027-01-01")
-
-    assert settings_mod.get_license_expires_at() == "2027-01-15"
-    assert settings_mod.get_license_last_checked_at() == "2027-01-01"
-
-
-def test_activate_key_persists_the_key_and_a_provisional_expiry():
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
-
-    assert settings_mod.get_license_key() == key
-    assert settings_mod.get_license_expires_at() == date.today().isoformat()
-
-
-def test_refresh_license_status_is_a_noop_while_unenforced(monkeypatch):
-    monkeypatch.setattr(lic, "LICENSE_ENFORCED", False)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://license.example.com")
-    lic.activate_key(lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H"))
-
-    assert lic.refresh_license_status() is False
-
-
-def test_refresh_license_status_is_a_noop_without_a_configured_server_url(monkeypatch):
-    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", None)
-    lic.activate_key(lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H"))
-
-    assert lic.refresh_license_status() is False
-
-
-def test_refresh_license_status_is_a_noop_without_a_key_entered(monkeypatch):
-    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://license.example.com")
-    settings_mod.set_license_key(None)
-
-    assert lic.refresh_license_status() is False
-
-
-class _FakeHttpResponse:
+class _FakeResponse:
     def __init__(self, payload: dict):
         self._body = json.dumps(payload).encode("utf-8")
 
@@ -170,53 +174,83 @@ class _FakeHttpResponse:
         return False
 
 
-def test_refresh_license_status_updates_cached_expiry_on_success(monkeypatch):
-    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://license.example.com")
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
+def test_refresh_is_network_free_unless_enforced_configured_and_licensed(monkeypatch, sign):
+    def _explode(*a, **kw):
+        raise AssertionError("refresh must not touch the network here")
+    monkeypatch.setattr(lic.urllib.request, "urlopen", _explode)
 
+    monkeypatch.setattr(lic, "LICENSE_ENFORCED", False)
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://example.com")
+    lic.activate_key(sign())
+    assert lic.refresh_license_status() is False
+
+    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", None)
+    assert lic.refresh_license_status() is False
+
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://example.com")
+    settings_mod.set_license_key(None)
+    assert lic.refresh_license_status() is False
+
+
+def test_refresh_stores_the_extended_licence(monkeypatch, sign):
+    monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://example.com")
+    lic.activate_key(sign(expires="2026-01-01"))
+
+    renewed = sign(expires="2026-02-01")
     monkeypatch.setattr(lic.urllib.request, "urlopen",
-                         lambda url, timeout=5.0: _FakeHttpResponse({"valid": True, "expires_at": "2027-06-01"}))
+                         lambda url, timeout=5.0: _FakeResponse({"valid": True, "token": renewed}))
 
     assert lic.refresh_license_status() is True
-    assert settings_mod.get_license_expires_at() == "2027-06-01"
+    assert settings_mod.get_license_key() == renewed
+    assert settings_mod.get_license_expires_at() == "2026-02-01"
     assert settings_mod.get_license_last_checked_at() == date.today().isoformat()
 
 
-def test_refresh_license_status_clears_expiry_when_server_says_invalid(monkeypatch):
-    """An explicit "no" (never issued, or canceled) clears the cached
-    expiry outright rather than leaving the old value to ride out a grace
-    period it hasn't earned."""
+def test_refresh_drops_the_licence_when_the_server_declines(monkeypatch, sign):
+    """A cancelled subscription: the server stops extending, so access
+    ends now rather than riding out a grace period it hasn't earned."""
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://license.example.com")
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://example.com")
+    lic.activate_key(sign(expires=(date.today() + timedelta(days=5)).isoformat()))
 
     monkeypatch.setattr(lic.urllib.request, "urlopen",
-                         lambda url, timeout=5.0: _FakeHttpResponse({"valid": False, "expires_at": None}))
+                         lambda url, timeout=5.0: _FakeResponse({"valid": False}))
 
     assert lic.refresh_license_status() is True
     assert settings_mod.get_license_expires_at() is None
-    assert lic.is_licensed() is False
 
 
-def test_refresh_license_status_returns_false_on_network_error(monkeypatch):
+def test_refresh_keeps_working_offline(monkeypatch, sign):
     monkeypatch.setattr(lic, "LICENSE_ENFORCED", True)
-    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://license.example.com")
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    lic.activate_key(key)
+    monkeypatch.setattr(lic, "LICENSE_SERVER_URL", "https://example.com")
+    token = sign(expires=(date.today() + timedelta(days=5)).isoformat())
+    lic.activate_key(token)
 
-    def _raise(url, timeout=5.0):
+    def _unreachable(url, timeout=5.0):
         raise urllib.error.URLError("no route to host")
-
-    monkeypatch.setattr(lic.urllib.request, "urlopen", _raise)
+    monkeypatch.setattr(lic.urllib.request, "urlopen", _unreachable)
 
     assert lic.refresh_license_status() is False
-    # The provisional expiry from activate_key survives an unreachable
-    # server -- this is exactly the grace period's job.
-    assert settings_mod.get_license_expires_at() == date.today().isoformat()
+    # The signed licence still stands on its own.
+    assert settings_mod.get_license_key() == token
+    assert lic.is_licensed() is True
 
+
+# --- settings ---------------------------------------------------------
+
+def test_licence_settings_roundtrip():
+    assert settings_mod.get_license_key() is None
+    settings_mod.set_license_key("PF1.x.y")
+    settings_mod.set_license_expires_at("2027-01-15")
+    settings_mod.set_license_last_checked_at("2027-01-01")
+    assert settings_mod.get_license_key() == "PF1.x.y"
+    assert settings_mod.get_license_expires_at() == "2027-01-15"
+    assert settings_mod.get_license_last_checked_at() == "2027-01-01"
+
+
+# --- UI wiring --------------------------------------------------------
 
 @pytest.fixture()
 def qapp():
@@ -224,8 +258,9 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def test_license_dialog_rejects_invalid_key(qapp):
+def test_license_dialog_rejects_an_invalid_licence(qapp, sign):
     from ui.license_dialog import LicenseDialog
+    sign()
     dlg = LicenseDialog()
     dlg._input.setText("not-a-real-key")
     dlg._on_accept()
@@ -233,13 +268,13 @@ def test_license_dialog_rejects_invalid_key(qapp):
     assert "valid" in dlg._error_label.text()
 
 
-def test_license_dialog_accepts_valid_key(qapp):
+def test_license_dialog_accepts_a_signed_licence(qapp, sign):
     from ui.license_dialog import LicenseDialog
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
+    token = sign()
     dlg = LicenseDialog()
-    dlg._input.setText(key)
+    dlg._input.setText(token)
     dlg._on_accept()
-    assert dlg.entered_key() == key
+    assert dlg.entered_key() == token
 
 
 @pytest.fixture()
@@ -258,10 +293,9 @@ def _synchronous_run_async(monkeypatch):
     monkeypatch.setattr(worker_mod.AsyncRunner, "run_async", _sync_run_async)
 
 
-def test_entering_a_license_key_via_the_menu_action_persists_it(qapp, tmp_path, monkeypatch, _synchronous_run_async):
-    """ui/app_window.py's File > Enter License Key... menu action --
-    confirms the wiring itself (dialog -> settings persistence), not
-    LicenseDialog's own validation (already covered above)."""
+def test_entering_a_licence_via_the_menu_action_persists_it(qapp, tmp_path, monkeypatch,
+                                                            _synchronous_run_async, sign):
+    """ui/app_window.py's File > Enter License Key... action."""
     from database.repository import PokerDatabase
     from ui.app_window import AppWindow
     import ui.app_window as app_window_mod
@@ -269,13 +303,14 @@ def test_entering_a_license_key_via_the_menu_action_persists_it(qapp, tmp_path, 
     db = PokerDatabase(tmp_path / "test.db")
     win = AppWindow("Hero", db, "$")
 
-    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
-    monkeypatch.setattr(app_window_mod, "LicenseDialog", lambda current_key=None, parent=None: _FakeAcceptedDialog(key))
+    token = sign(expires="2027-09-09")
+    monkeypatch.setattr(app_window_mod, "LicenseDialog",
+                         lambda current_key=None, parent=None: _FakeAcceptedDialog(token))
 
     win._on_enter_license_key_clicked()
 
-    assert settings_mod.get_license_key() == key
-    assert settings_mod.get_license_expires_at() == date.today().isoformat()
+    assert settings_mod.get_license_key() == token
+    assert settings_mod.get_license_expires_at() == "2027-09-09"
     db.close()
 
 
@@ -288,14 +323,3 @@ class _FakeAcceptedDialog:
 
     def entered_key(self):
         return self._key
-
-
-def test_generate_license_key_script_produces_valid_unique_keys():
-    """scripts/generate_license_key.py -- the manual-issuance stopgap until
-    the Stripe webhook backend ever ships (server/README.md)."""
-    from scripts.generate_license_key import new_key
-
-    keys = [new_key() for _ in range(20)]
-
-    assert all(lic.validate_license_key(k) for k in keys)
-    assert len(set(keys)) == len(keys)

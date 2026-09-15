@@ -1,7 +1,10 @@
-"""Enter/replace a license key — not wired into the menu bar yet (see
-core/licensing.py's LICENSE_ENFORCED). Built now so that turning
-enforcement on later is just adding one menu action that opens this,
-not designing and testing a new dialog under release pressure."""
+"""Enter/replace a licence key (File > Enter License Key...).
+
+Licences are signed tokens rather than short codes, so they're long and
+meant to be pasted from the email they arrived in — hence the wide field
+and the wording below. Validation here is a real signature check
+(core/licensing.py), so anything mistyped or made up is refused before
+it can be saved."""
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QDialogButtonBox
 
 from ui.theme import STYLE, lbl
@@ -13,17 +16,17 @@ class LicenseDialog(QDialog):
         super().__init__(parent)
         self.setStyleSheet(STYLE)
         self.setWindowTitle("Enter License Key")
-        self.resize(420, 160)
+        self.resize(560, 180)
         self.setModal(True)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(10)
 
-        lay.addWidget(lbl("Enter your PokerForge license key:", size=13))
+        lay.addWidget(lbl("Paste the licence key from your email:", size=13))
 
         self._input = QLineEdit(current_key or "")
-        self._input.setPlaceholderText("PF-XXXXX-XXXXX-XXXXX-XX")
+        self._input.setPlaceholderText("PF1....")
         lay.addWidget(self._input)
 
         self._error_label = lbl("", size=12, color="#f85149")
@@ -38,7 +41,7 @@ class LicenseDialog(QDialog):
     def _on_accept(self):
         key = self._input.text().strip()
         if not validate_license_key(key):
-            self._error_label.setText("That doesn't look like a valid license key.")
+            self._error_label.setText("That licence key isn't valid — check the whole line was copied.")
             return
         self._key = key
         self.accept()

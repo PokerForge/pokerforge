@@ -493,20 +493,20 @@ class AppWindow(QMainWindow, AsyncRunner):
         self._apply_filters()  # picks up a changed Rakeback % immediately, no restart needed
 
     def _on_enter_license_key_clicked(self):
-        # LicenseDialog itself already checks format/checksum before
-        # letting Ok through, so an accepted dialog always means a
-        # well-formed key -- nothing further to validate here.
+        # LicenseDialog verifies the signature before letting Ok through,
+        # so an accepted dialog means a genuine licence. activate_key is
+        # checked anyway rather than assumed -- it's the function that
+        # decides, and a silent no-op here would be invisible.
         dlg = LicenseDialog(current_key=get_license_key(), parent=self)
         if dlg.exec():
-            # activate_key grants a provisional grace window immediately
-            # (see core/licensing.py) so this takes effect right away even
-            # before the server check below completes.
-            activate_key(dlg.entered_key())
+            if not activate_key(dlg.entered_key() or ""):
+                QMessageBox.warning(self, "License", "That licence key couldn't be verified.")
+                return
             # Display-time stakes gating (database/queries.py) reads
             # is_licensed()/should_gate_by_stakes() fresh on every query,
-            # so a newly-entered key takes effect immediately -- no
-            # restart, no re-import, same reasoning as the Rakeback %
-            # setting above.
+            # so a newly-entered licence takes effect immediately -- no
+            # restart, no re-import. The expiry is signed into the token,
+            # so this holds even with no connection.
             self._apply_filters()
             QMessageBox.information(self, "License", "License key saved — thanks for supporting PokerForge!")
             self.run_async(refresh_license_status, self._on_license_status_refreshed, key="license_status")
