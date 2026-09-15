@@ -4,10 +4,56 @@ All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 
-## [1.0.0-beta.2] — 2026-09-13
+## [1.0.0-beta.2] — 2026-09-15
 
-PokerForge Intelligence: goes beyond raw stats to tell you what's
-actually costing you money, and what to do about it.
+More rooms, tournaments, and rakeback — plus PokerForge Intelligence,
+which goes beyond raw stats to tell you what's actually costing you
+money and what to do about it.
+
+### More poker rooms
+
+- **PokerStars**, **GGPoker** and **Winning Network / Americas
+  Cardroom** hand histories are now parsed natively, alongside the
+  existing iPoker and Grosvenor support — verified against real
+  exports of 286,554, 222,843 and 30,863 hands respectively.
+- Note that GGPoker and Winning Network anonymise opponents in their
+  own exports, so hands from those rooms build your own stats rather
+  than opponent profiles.
+
+### Tournaments
+
+- A global **$ / T toggle** in the filter bar switches Overview,
+  Sessions, Stats and Population between cash and tournament play —
+  the same mode switch PT4 and Hold'em Manager use — rather than
+  isolating tournaments in a separate tab.
+- Tournament mode gives Overview a results summary (Tournaments,
+  Logged, ROI, ITM, Avg Finish, Profit) and a cumulative profit graph,
+  and turns Sessions into a results table.
+- Because no hand-history format records your finish position or
+  payout, results are entered manually per tournament; summaries
+  report "X of Y logged" rather than treating unlogged tournaments
+  as $0.
+
+### Rakeback
+
+- Enter your rakeback deal in Settings and PokerForge tracks what
+  you've actually earned over any date range — shown as its own stat
+  card and as a "Profit & Rakeback" line on the Overview graph.
+- Rake is attributed per player across those who saw the flop, rather
+  than crediting every seated player with the whole pot's rake.
+
+### Fixes
+
+- **GGPoker hands were missing from every stat.** Hero-identity
+  normalisation renamed the room's placeholder name before stats were
+  built, so no rows were ever stored. All affected hands are restored
+  by a Rebuild Stats Database run (Tools menu).
+- **A villain's "over-folds to 3-bets" exploit listed irrelevant
+  hands** — it counted cold folds from the blinds facing someone
+  else's 3-bet. It now only counts players 3-bet off their own open,
+  which is what the advice actually assumes.
+
+### PokerForge Intelligence
 
 - **Leaks by Position** (Stats > Leaks) — ranks your biggest deviations
   from your own imported population, by position, weighted by how much
