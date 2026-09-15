@@ -27,7 +27,12 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: that label's shared pool has been
+    # saturated ("All GitHub-hosted runners with label [ubuntu-latest] are
+    # busy"), leaving deploys queued indefinitely. A specific image draws
+    # from a different pool, and this job has no reason to float onto a
+    # newer image unannounced anyway.
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
