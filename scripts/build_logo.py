@@ -42,7 +42,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QImage, QPainter, QColor
 from PyQt6.QtSvg import QSvgRenderer
@@ -64,6 +64,11 @@ ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
 DOCS = ROOT / "docs"
 SITE_PNGS = {"logo.png": 128, "favicon-32.png": 32, "favicon-192.png": 192}
 SITE_ICO_SIZES = [16, 32, 48]
+# White ring added to the SITE assets only, as a fraction of the mark's
+# width. The chip's rim is black and vanishes against the site's near-black
+# header; the app draws its own logo on a felt-green banner where the rim
+# still reads, so it keeps the plain mark.
+OUTLINE_FRACTION = 0.022
 
 # iOS ignores alpha on a home-screen icon and composites it onto black,
 # which would swallow the chip's black rim entirely. So this one gets an
@@ -143,6 +148,29 @@ def remove_background_card(im: Image.Image) -> int:
             if 0 <= nx < w and 0 <= ny < h:
                 seed(nx, ny)
     return cleared
+
+
+def add_outline(im: Image.Image, fraction: float = OUTLINE_FRACTION) -> Image.Image:
+    """The mark with a white ring around its outer edge.
+
+    The chip's own rim is black, which all but disappears against the
+    site's near-black header -- the mark reads as a floating "PF" with
+    its edge lost. A white outline gives it a defined boundary.
+
+    Done by dilating the alpha channel and painting white wherever the
+    dilated silhouette extends past the original, so the ring follows the
+    real edge rather than assuming a perfect circle. Added at full
+    resolution so it scales with every size derived from it."""
+    w, _ = im.size
+    radius = max(1, round(w * fraction))
+
+    alpha = im.getchannel("A")
+    grown = alpha.filter(ImageFilter.MaxFilter(radius * 2 + 1))
+
+    ring = Image.new("RGBA", im.size, (255, 255, 255, 255))
+    ring.putalpha(grown)
+    ring.alpha_composite(im)
+    return ring
 
 
 def fill_interior_holes(im: Image.Image) -> int:
@@ -229,13 +257,26 @@ def main() -> int:
           f"({ICON.stat().st_size:,} bytes, sizes {ICON_SIZES})")
 
     if DOCS.is_dir():
+        # The mark fills its square edge to edge, so a ring drawn on it
+        # would be cut off flat at top, bottom and sides. Pad first, then
+        # outline into the room that creates.
+        pad = round(side * OUTLINE_FRACTION) + 2
+        padded = Image.new("RGBA", (side + pad * 2, side + pad * 2),
+                           (255, 255, 255, 0))
+        padded.paste(square, (pad, pad))
+        outlined = add_outline(padded)
+        print(f"site mark: {side} -> {outlined.size[0]} square with a "
+              f"{OUTLINE_FRACTION:.1%} white outline")
+
         for name, size in SITE_PNGS.items():
             path = DOCS / name
-            square.resize((size, size), Image.LANCZOS).save(
+            outlined.resize((size, size), Image.LANCZOS).save(
                 path, optimize=True, compress_level=9)
             print(f"wrote {path.relative_to(ROOT)} "
                   f"({size}px, {path.stat().st_size:,} bytes)")
 
+        # No outline here: this one sits on an opaque white ground, where
+        # a white ring is invisible anyway and only shrinks the mark.
         apple = DOCS / "apple-touch-icon.png"
         ground = Image.new("RGBA", (APPLE_TOUCH_SIZE, APPLE_TOUCH_SIZE),
                            APPLE_TOUCH_GROUND)
@@ -248,8 +289,8 @@ def main() -> int:
         # Smaller than the app's icon on purpose: a browser never asks
         # for 256, and the file is fetched on every cold page load.
         favicon = DOCS / "favicon.ico"
-        square.save(favicon, format="ICO",
-                    sizes=[(s, s) for s in SITE_ICO_SIZES])
+        outlined.save(favicon, format="ICO",
+                      sizes=[(s, s) for s in SITE_ICO_SIZES])
         print(f"wrote {favicon.relative_to(ROOT)} "
               f"({favicon.stat().st_size:,} bytes, sizes {SITE_ICO_SIZES})")
     else:
