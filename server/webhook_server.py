@@ -33,7 +33,7 @@ import stripe
 from flask import Flask, request, jsonify
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from core.licensing import generate_license_key  # noqa: E402
+from core.licensing import generate_license_key, validate_license_key  # noqa: E402
 
 app = Flask(__name__)
 
@@ -42,6 +42,15 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL", "licenses@pokerforge.app")
 DB_PATH = Path(os.environ.get("LICENSE_LEDGER_PATH") or Path(__file__).resolve().parent / "licenses.db")
+
+# Where a subscription's issued license key is stored on the Stripe
+# Subscription object. Stripe is the durable record -- see
+# _handle_checkout_completed and _rebuild_from_stripe.
+LICENSE_KEY_METADATA = "pokerforge_license_key"
+
+# How many subscriptions a ledger-miss lookup will scan before giving up,
+# so one junk key can't walk an unbounded customer list.
+_REBUILD_SCAN_LIMIT = 1000
 
 # Statuses (mirroring Stripe's own Subscription.status) that still count as
 # entitled -- current_period_end is the real gate either way, this just
@@ -173,6 +182,15 @@ def _handle_checkout_completed(conn: sqlite3.Connection, event) -> None:
 
     subscription = stripe.Subscription.retrieve(subscription_id)
     key = _new_key()
+
+    # Write the key to Stripe BEFORE recording or emailing it. Stripe is
+    # the durable record; the ledger below is only a cache (this service
+    # runs on an ephemeral filesystem, so the file does not survive a
+    # redeploy). Doing this first means a failure here raises before the
+    # key is emailed, so Stripe's retry re-issues cleanly rather than
+    # leaving a customer holding a key nothing has a record of.
+    stripe.Subscription.modify(subscription_id, metadata={LICENSE_KEY_METADATA: key})
+
     conn.execute(
         "INSERT INTO licenses (license_key, email, stripe_customer_id, stripe_subscription_id, "
         "status, current_period_end, created_at, updated_at) "
@@ -247,6 +265,44 @@ def stripe_webhook():
     return jsonify(status="ok"), 200
 
 
+def _rebuild_from_stripe(conn: sqlite3.Connection, key: str):
+    """Repopulates one ledger row from Stripe, which holds the durable
+    copy of every issued key (see _handle_checkout_completed). Without
+    this, losing the ledger file -- which happens on every redeploy, as
+    the filesystem is ephemeral -- would silently invalidate the key of
+    every paying customer, with no way to reconstruct who owned what.
+
+    Returns (status, current_period_end) if found, else None."""
+    if not stripe.api_key:
+        return None
+    try:
+        scanned = 0
+        for sub in stripe.Subscription.list(status="all", limit=100).auto_paging_iter():
+            scanned += 1
+            if scanned > _REBUILD_SCAN_LIMIT:
+                app.logger.warning("Gave up rebuilding a license after %s subscriptions", scanned)
+                return None
+            if _field(_field(sub, "metadata"), LICENSE_KEY_METADATA) != key:
+                continue
+            status = sub["status"]
+            expires_at = _period_end_iso(_subscription_period_end(sub))
+            # email is deliberately left null: it isn't part of the
+            # licensing decision, and Stripe remains the record of who
+            # the customer is.
+            conn.execute(
+                "INSERT OR REPLACE INTO licenses (license_key, email, stripe_customer_id, "
+                "stripe_subscription_id, status, current_period_end, created_at, updated_at) "
+                "VALUES (?, NULL, ?, ?, ?, ?, datetime('now'), datetime('now'))",
+                (key, _field(sub, "customer"), sub["id"], status, expires_at),
+            )
+            conn.commit()
+            app.logger.info("Rebuilt license %s from Stripe subscription %s", key, sub["id"])
+            return status, expires_at
+    except Exception:
+        app.logger.exception("Could not rebuild license from Stripe")
+    return None
+
+
 @app.route("/license/status", methods=["GET"])
 def license_status():
     key = request.args.get("key", "")
@@ -255,6 +311,11 @@ def license_status():
         row = conn.execute(
             "SELECT status, current_period_end FROM licenses WHERE license_key = ?", (key,)
         ).fetchone()
+        # A miss usually means the ledger cache was lost, not that the key
+        # is fake -- so check Stripe before calling it invalid. Only for
+        # well-formed keys, so junk can't trigger a customer-list scan.
+        if not row and validate_license_key(key):
+            row = _rebuild_from_stripe(conn, key)
     finally:
         conn.close()
 

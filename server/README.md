@@ -74,12 +74,15 @@ that answer, including its offline grace period.
      `0.0.0.0` rather than just localhost, is what makes the service
      actually reachable from the outside).
 
-   **Storage note:** a free-tier web service's filesystem is ephemeral —
-   `licenses.db` gets wiped on every redeploy/restart. Fine for testing,
-   but before relying on this with real paying customers, add a small
-   persistent disk (Render: a few dollars/month, `disk:` block in
-   `render.yaml`) and point `LICENSE_LEDGER_PATH` at a path on it —
-   otherwise a restart can lose the record of who's paid for what.
+   **Storage note:** a free-tier web service's filesystem is ephemeral,
+   so `licenses.db` is wiped on every redeploy. That's survivable by
+   design: every issued key is also written to its Stripe subscription's
+   metadata (`pokerforge_license_key`), which makes Stripe the durable
+   record and the ledger a disposable cache. If a key isn't found
+   locally, `/license/status` looks it up in Stripe and repopulates the
+   row, so a customer's key keeps working across a wipe. A persistent
+   disk is therefore optional — worth adding for speed if the customer
+   list ever grows large enough that a rebuild scan gets slow.
 5. In the Stripe Dashboard, add a webhook endpoint pointing at
    `https://<your-deployed-host>/webhook/stripe`, subscribed to
    `checkout.session.completed`, `invoice.paid`,

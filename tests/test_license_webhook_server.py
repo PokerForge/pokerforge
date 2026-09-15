@@ -18,6 +18,8 @@ def _isolated_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "licenses.db")
     monkeypatch.setattr(srv, "STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(srv, "SENDGRID_API_KEY", None)
+    # Issuing a key writes it to Stripe; no test should reach the real API.
+    monkeypatch.setattr(srv.stripe.Subscription, "modify", lambda sub_id, **kw: None)
 
 
 @pytest.fixture()
@@ -202,6 +204,66 @@ def test_ignores_event_types_it_does_not_handle(client, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "ignored"
+
+
+def test_issuing_a_key_records_it_on_the_stripe_subscription(client, monkeypatch):
+    """Stripe is the durable record -- the ledger is only a cache, so the
+    key must also land in subscription metadata (see _rebuild_from_stripe)."""
+    _mock_retrieve(monkeypatch, _subscription())
+    modified = {}
+    monkeypatch.setattr(srv.stripe.Subscription, "modify",
+                         lambda sub_id, **kw: modified.update({"id": sub_id, **kw}))
+
+    _post_event(client, _checkout_completed_event(), monkeypatch)
+
+    issued_key = _license_row()[0]
+    assert modified["id"] == "sub_1"
+    assert modified["metadata"][srv.LICENSE_KEY_METADATA] == issued_key
+
+
+def test_status_rebuilds_a_lost_ledger_entry_from_stripe(client, monkeypatch):
+    """The exact scenario a redeploy causes: the ledger file is gone, but
+    a paying customer's key must keep working."""
+    key = lic.generate_license_key("PF-A1B2C-C3D4E-F5G6H")
+    sub = _stripe_obj({
+        "id": "sub_restored", "status": "active", "current_period_end": 1_900_000_000,
+        "customer": "cus_restored", "items": {"data": []},
+        "metadata": {srv.LICENSE_KEY_METADATA: key},
+    })
+    monkeypatch.setattr(srv.stripe, "api_key", "sk_test_dummy")
+    monkeypatch.setattr(srv.stripe.Subscription, "list",
+                         lambda **kw: _FakeList([sub]))
+
+    body = client.get(f"/license/status?key={key}").get_json()
+
+    assert body["valid"] is True
+    assert body["expires_at"] == srv._period_end_iso(1_900_000_000)
+    # and it's cached locally afterwards, so the next check needs no API call
+    conn = srv._db()
+    row = conn.execute("SELECT stripe_subscription_id FROM licenses WHERE license_key = ?", (key,)).fetchone()
+    conn.close()
+    assert row[0] == "sub_restored"
+
+
+def test_status_does_not_scan_stripe_for_a_malformed_key(client, monkeypatch):
+    """A junk key shouldn't be able to trigger a walk of the customer list."""
+    called = []
+    monkeypatch.setattr(srv.stripe, "api_key", "sk_test_dummy")
+    monkeypatch.setattr(srv.stripe.Subscription, "list",
+                         lambda **kw: called.append(1) or _FakeList([]))
+
+    body = client.get("/license/status?key=not-a-real-key").get_json()
+
+    assert body["valid"] is False
+    assert called == []
+
+
+class _FakeList:
+    def __init__(self, items):
+        self._items = items
+
+    def auto_paging_iter(self):
+        return iter(self._items)
 
 
 def test_status_endpoint_reports_an_unknown_key_as_invalid(client):

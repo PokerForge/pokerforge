@@ -183,10 +183,11 @@ now done:
 
   **`LICENSE_ENFORCED` is still `False`** — nothing is gated for
   anyone yet. Before flipping it to actually go live:
-  - Add a small persistent disk to the Render service and point
-    `LICENSE_LEDGER_PATH` at it — the free tier's filesystem is
-    ephemeral, so a redeploy/restart currently wipes the record of
-    who's paid for what (`server/README.md`'s Storage note).
+  - ~~Make the license ledger survive a redeploy~~ — **Done.** Every
+    issued key is written to its Stripe subscription's metadata, so
+    Stripe is the durable record and the SQLite ledger is a cache that
+    `/license/status` rebuilds on a miss. Render's ephemeral filesystem
+    is no longer a data-loss risk, and no paid disk is needed.
   - Update `PRIVACY_POLICY.md` — it currently says the app makes zero
     network calls, which stops being fully true for paying
     subscribers (`refresh_license_status`'s one narrow exception).
