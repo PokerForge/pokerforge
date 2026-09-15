@@ -18,130 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --bg4:#21262d;
-    --felt-1:#081911; --felt-2:#0f2e1a; --felt-3:#123321;
-    --green:#3fb950; --green-bright:#56d364;
-    --pink:#f778ba; --blue:#58a6ff; --orange:#d29922;
-    --text:#e6edf3; --dim:#8b949e; --dimmer:#636b74; --border:#30363d; --border-soft:#21262d;
-    --display:'Barlow Condensed', Impact, 'Arial Narrow', sans-serif;
-    --body:'IBM Plex Sans', -apple-system, 'Segoe UI', Arial, sans-serif;
-    --mono:'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
-    --maxw:1160px;
-    color-scheme:dark;
-  }
-  *{box-sizing:border-box;}
-  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--body); font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden;}
-  h1,h2,h3{font-family:var(--display); font-weight:800; line-height:1.02; margin:0; text-wrap:balance;}
-  p{margin:0;}
-  a{color:inherit;}
-  img{max-width:100%;}
-  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 32px;}
-  .eyebrow{font-family:var(--mono); font-size:12.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--green-bright); font-weight:600; display:flex; align-items:center; gap:10px;}
-  .eyebrow::before{content:""; width:18px; height:1px; background:var(--green-bright); display:inline-block;}
-  .btn{display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:15px; padding:13px 24px; border-radius:8px; border:1px solid transparent; cursor:pointer; text-decoration:none; white-space:nowrap;}
-  .btn-primary{background:var(--green); color:#04150a;}
-  .btn-primary:hover{background:var(--green-bright);}
-  .btn-ghost{background:transparent; color:var(--text); border-color:var(--border);}
-  .btn-ghost:hover{border-color:var(--dim); background:var(--bg3);}
-  .btn:focus-visible, a:focus-visible, summary:focus-visible{outline:2px solid var(--green-bright); outline-offset:3px;}
-
-  header.nav{position:sticky; top:0; z-index:40; background:rgba(13,17,23,.88); backdrop-filter:blur(10px); border-bottom:1px solid var(--border-soft);}
-  .nav-row{display:flex; align-items:center; justify-content:space-between; height:68px;}
-  .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:800; font-size:27px;}
-  .brand .fg{color:var(--green);}
-  .nav-links{display:flex; align-items:center; gap:34px; font-size:14.5px; font-weight:500; color:var(--dim);}
-  .nav-links a{text-decoration:none;}
-  .nav-links a:hover{color:var(--text);}
-  @media (max-width:860px){ .nav-links{display:none;} }
-
-  .hero{position:relative; padding:96px 0 72px; overflow:hidden;
-    background:radial-gradient(ellipse 900px 480px at 14% -10%, var(--felt-3), transparent 60%), linear-gradient(180deg, var(--felt-1) 0%, var(--bg) 78%);
-    border-bottom:1px solid var(--border-soft);}
-  .hero .suits{position:absolute; inset:0; font-size:150px; color:rgba(255,255,255,.025); display:flex; align-items:center; justify-content:space-between; padding:0 40px; pointer-events:none;}
-  .hero-grid{position:relative; display:grid; grid-template-columns:1.02fr .98fr; gap:56px; align-items:center;}
-  @media (max-width:980px){ .hero-grid{grid-template-columns:1fr;} }
-  .hero h1{font-size:clamp(38px,4.6vw,58px);}
-  .hero h1 .fg{color:var(--green-bright);}
-  .hero p.lead{margin-top:20px; font-size:18px; color:var(--dim); max-width:52ch;}
-  .hero .ctas{display:flex; gap:14px; margin-top:32px; flex-wrap:wrap;}
-  .hero .trust{margin-top:20px; font-size:13px; color:var(--dimmer); font-family:var(--mono);}
-  .hero .trust b{color:var(--dim); font-weight:600;}
-  .device{background:var(--bg2); border:1px solid var(--border); border-radius:14px; padding:10px; box-shadow:0 40px 90px -30px rgba(0,0,0,.7);}
-  .device .bar{display:flex; gap:6px; padding:6px 8px 12px;}
-  .device .dot{width:10px; height:10px; border-radius:50%; background:var(--bg4);}
-  .device img{width:100%; display:block; border-radius:8px; border:1px solid var(--border-soft);}
-
-  .compat{padding:42px 0 38px; border-bottom:1px solid var(--border-soft); text-align:center;}
-  .compat-label{font-size:11.5px; color:var(--dimmer); font-family:var(--mono); letter-spacing:.16em; text-transform:uppercase;}
-  .compat-row{display:flex; align-items:baseline; justify-content:center; flex-wrap:wrap; gap:8px 34px; margin-top:18px;}
-  /* Set as wordmarks rather than tags: at this scale the type carries the
-     same weight a logo row would, without borrowing anyone's marks. */
-  .room{font-family:var(--display); font-weight:700; font-size:clamp(19px,2.3vw,26px);
-    text-transform:uppercase; letter-spacing:.045em; color:var(--dim); transition:color .18s ease;}
-  .room:hover{color:var(--text);}
-  .compat-note{margin-top:20px; font-size:13px; color:var(--dimmer);}
-
-  section{padding:96px 0;}
-  .sec-head{max-width:640px; margin-bottom:52px;}
-  .sec-head h2{font-size:clamp(30px,3.4vw,42px); margin-top:14px;}
-  .sec-head p{margin-top:16px; color:var(--dim); font-size:16.5px;}
-
-  .props{display:grid; grid-template-columns:repeat(4,1fr); gap:18px;}
-  @media (max-width:920px){ .props{grid-template-columns:repeat(2,1fr);} }
-  @media (max-width:560px){ .props{grid-template-columns:1fr;} }
-  .prop-card{background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:24px 22px; border-top:3px solid var(--accent,var(--green));}
-  .prop-icon{width:32px; height:32px; margin-bottom:16px; color:var(--accent,var(--green));}
-  .prop-card h3{font-family:var(--body); font-weight:700; font-size:16.5px;}
-  .prop-card p{margin-top:10px; font-size:14.5px; color:var(--dim);}
-
-  .frow{display:grid; grid-template-columns:1fr 1.15fr; gap:56px; align-items:center; padding:72px 0; border-top:1px solid var(--border-soft);}
-  .frow.rev{grid-template-columns:1.15fr 1fr;}
-  .frow.rev .art{order:-1;}
-  @media (max-width:920px){ .frow, .frow.rev{grid-template-columns:1fr; gap:34px;} .frow.rev .art{order:0;} }
-  .frow h3{font-size:clamp(24px,2.6vw,32px);}
-  .frow .kicker{font-family:var(--mono); font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; margin-bottom:12px;}
-  .frow p.copy{margin-top:16px; color:var(--dim); font-size:15.5px; max-width:48ch;}
-  .frow ul{list-style:none; margin:20px 0 0; padding:0; display:flex; flex-direction:column; gap:10px;}
-  .frow li{font-size:14.5px; display:flex; gap:10px;}
-  .frow li::before{content:"✓"; color:var(--green-bright); font-weight:700; flex-shrink:0;}
-  .shot{border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:0 30px 60px -30px rgba(0,0,0,.65); background:var(--bg2); display:block;}
-  .shot img{display:block; width:100%;}
-
-  .chart-card{background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:22px;}
-  .chart-card .ct{font-family:var(--mono); font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--dimmer); margin-bottom:14px;}
-  .legend{display:flex; gap:18px; margin-top:14px; font-size:12.5px; color:var(--dim); flex-wrap:wrap;}
-  .legend span{display:flex; align-items:center; gap:7px;}
-  .swatch{width:14px; height:3px; border-radius:2px; display:inline-block;}
-  .mock-stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px;}
-  .mstat{background:var(--bg3); border:1px solid var(--border-soft); border-radius:8px; padding:12px 10px;}
-  .mstat .k{font-size:10.5px; color:var(--dimmer); text-transform:uppercase; letter-spacing:.06em; font-family:var(--mono);}
-  .mstat .v{font-family:var(--mono); font-weight:600; font-size:17px; margin-top:4px;}
-
-  .cta-band{background:linear-gradient(180deg,var(--felt-2),var(--felt-1)); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); text-align:center; padding:88px 0;}
-  .cta-band h2{font-size:clamp(28px,4vw,44px);}
-  .cta-band p{margin-top:14px; color:var(--dim); font-size:16px;}
-  .cta-band .ctas{display:flex; justify-content:center; gap:14px; margin-top:30px; flex-wrap:wrap;}
-
-  .faq{max-width:760px;}
-  details{border-bottom:1px solid var(--border-soft); padding:20px 0;}
-  summary{cursor:pointer; font-weight:600; font-size:16px; list-style:none; display:flex; justify-content:space-between; align-items:center; gap:16px;}
-  summary::-webkit-details-marker{display:none;}
-  summary::after{content:"+"; color:var(--dim); font-size:22px; font-weight:400;}
-  details[open] summary::after{content:"–";}
-  details p{margin-top:14px; color:var(--dim); font-size:14.5px; max-width:66ch;}
-
-  footer{padding:60px 0 40px;}
-  .foot-grid{display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr; gap:40px;}
-  @media (max-width:720px){ .foot-grid{grid-template-columns:1fr 1fr;} }
-  .foot-grid h4{font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--dimmer); font-family:var(--mono); margin:0 0 14px;}
-  .foot-grid a{display:block; font-size:14px; color:var(--dim); margin-bottom:10px; text-decoration:none;}
-  .foot-grid a:hover{color:var(--text);}
-  .foot-tag{color:var(--dimmer); font-size:13.5px; margin-top:14px; max-width:34ch;}
-  .foot-bottom{margin-top:50px; padding-top:26px; border-top:1px solid var(--border-soft); display:flex; justify-content:space-between; color:var(--dimmer); font-size:12.5px; flex-wrap:wrap; gap:10px;}
-  @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important;} }
-</style>
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
@@ -154,7 +31,7 @@
     <nav class="nav-links">
       <a href="#features">Features</a>
       <a href="#faq">FAQ</a>
-      <a href="https://github.com/PokerForge/pokerforge">GitHub</a>
+      <a href="/blog/">Blog</a>
     </nav>
     <a href="https://github.com/PokerForge/pokerforge/releases/download/v1.0.0-beta.2/PokerForge-Setup-1.0.0-beta.2.exe" class="btn btn-primary js-download">Download Free</a>
   </div>
@@ -360,6 +237,7 @@
         <h4>Product</h4>
         <a href="#features">Features</a>
         <a href="#faq">FAQ</a>
+        <a href="/blog/">Blog</a>
         <a href="https://github.com/PokerForge/pokerforge/releases">All releases</a>
       </div>
       <div>
@@ -382,42 +260,6 @@
   </div>
 </footer>
 
-<script>
-  // The Download buttons ship with a hardcoded link to a known-good
-  // installer so they work with JavaScript disabled or the API
-  // unreachable. This upgrades them to whatever the newest release is,
-  // so publishing a release is all that's needed — no site edit.
-  //
-  // Deliberately the releases LIST endpoint, not /releases/latest:
-  // "latest" excludes pre-releases, and every build so far is one.
-  (function () {
-    fetch('https://api.github.com/repos/PokerForge/pokerforge/releases')
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-      .then(function (releases) {
-        var asset, release;
-        for (var i = 0; i < releases.length && !asset; i++) {
-          if (releases[i].draft) continue;
-          for (var j = 0; j < releases[i].assets.length; j++) {
-            if (/\.exe$/i.test(releases[i].assets[j].name)) {
-              asset = releases[i].assets[j];
-              release = releases[i];
-              break;
-            }
-          }
-        }
-        if (!asset) return;
-        var links = document.querySelectorAll('.js-download');
-        for (var k = 0; k < links.length; k++) {
-          links[k].href = asset.browser_download_url;
-        }
-        var meta = document.getElementById('dl-meta');
-        if (meta) {
-          meta.textContent = '  ·  ' + release.tag_name +
-            '  ·  ' + Math.round(asset.size / 1048576) + ' MB';
-        }
-      })
-      .catch(function () { /* keep the hardcoded link */ });
-  })();
-</script>
+<script src="/download-link.js"></script>
 </body>
 </html>
