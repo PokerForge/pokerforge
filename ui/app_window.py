@@ -178,16 +178,19 @@ class AppWindow(QMainWindow, AsyncRunner):
         # e.g. Linear/Notion run a toolbar over a hero band — see
         # ui/header_banner.py for the fade that keeps that legible.
         _FILTER_BAR_HEIGHT = 52
-        header = HeaderBanner(top_height=60)
+        # Tall enough for the logo to read at 65px with real padding
+        # either side; the banner scales its logo and wordmark from this.
+        _LOGO_ROW_HEIGHT = 76
+        header = HeaderBanner(top_height=_LOGO_ROW_HEIGHT)
         self.header = header
-        header.setFixedHeight(60 + _FILTER_BAR_HEIGHT)
+        header.setFixedHeight(_LOGO_ROW_HEIGHT + _FILTER_BAR_HEIGHT)
         header_lay = QVBoxLayout(header)
         header_lay.setContentsMargins(0, 0, 0, 0)
         header_lay.setSpacing(0)
 
         top_row = QWidget()
         top_row.setStyleSheet("background: transparent;")
-        top_row.setFixedHeight(60)
+        top_row.setFixedHeight(_LOGO_ROW_HEIGHT)
         hl = QHBoxLayout(top_row)
         hl.setContentsMargins(24, 0, 24, 0)
         hl.addStretch()
