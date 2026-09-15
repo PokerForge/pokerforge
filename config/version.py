@@ -17,4 +17,4 @@ GITHUB_REPO = "PokerForge/pokerforge"
 UPDATE_MANIFEST_URL = None
 
 # Help > Report a Bug's mailto: recipient.
-SUPPORT_EMAIL = "pokerforge@outlook.com"
+SUPPORT_EMAIL = "support@pokerforge.app"

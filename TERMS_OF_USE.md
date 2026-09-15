@@ -84,4 +84,4 @@ your customers end up being.]
 
 ## 10. Contact
 
-pokerforge@outlook.com
+support@pokerforge.app

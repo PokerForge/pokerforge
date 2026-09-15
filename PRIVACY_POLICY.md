@@ -75,4 +75,4 @@ release.
 
 ## Contact
 
-pokerforge@outlook.com
+support@pokerforge.app
