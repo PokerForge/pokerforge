@@ -68,7 +68,12 @@ SITE_ICO_SIZES = [16, 32, 48]
 # width. The chip's rim is black and vanishes against the site's near-black
 # header; the app draws its own logo on a felt-green banner where the rim
 # still reads, so it keeps the plain mark.
-OUTLINE_FRACTION = 0.022
+#
+# Judge this at the size the header actually renders (42px), not at full
+# resolution where any ring looks obvious: 0.022 came out at 0.88px on
+# screen and was invisible. This gives ~2px, which reads as a boundary
+# without the ring becoming the loudest part of the mark.
+OUTLINE_FRACTION = 0.055
 
 # iOS ignores alpha on a home-screen icon and composites it onto black,
 # which would swallow the chip's black rim entirely. So this one gets an
