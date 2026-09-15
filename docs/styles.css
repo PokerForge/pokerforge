@@ -91,16 +91,28 @@
   .frow li::before{content:"✓"; color:var(--green-bright); font-weight:700; flex-shrink:0;}
   .shot{border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:0 30px 60px -30px rgba(0,0,0,.65); background:var(--bg2); display:block;}
   .shot img{display:block; width:100%;}
+  /* Only offer the zoom affordance once lightbox.js has wired it up, so
+     with JS off the cursor doesn't promise something that won't happen. */
+  .shot img[role="button"]{cursor:zoom-in;}
+  .shot img[role="button"]:focus-visible{outline:2px solid var(--green-bright); outline-offset:3px;}
 
-  .chart-card{background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:22px;}
-  .chart-card .ct{font-family:var(--mono); font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--dimmer); margin-bottom:14px;}
-  .legend{display:flex; gap:18px; margin-top:14px; font-size:12.5px; color:var(--dim); flex-wrap:wrap;}
-  .legend span{display:flex; align-items:center; gap:7px;}
-  .swatch{width:14px; height:3px; border-radius:2px; display:inline-block;}
-  .mock-stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px;}
-  .mstat{background:var(--bg3); border:1px solid var(--border-soft); border-radius:8px; padding:12px 10px;}
-  .mstat .k{font-size:10.5px; color:var(--dimmer); text-transform:uppercase; letter-spacing:.06em; font-family:var(--mono);}
-  .mstat .v{font-family:var(--mono); font-weight:600; font-size:17px; margin-top:4px;}
+  .lightbox{position:fixed; inset:0; z-index:100; background:rgba(4,6,9,.93);
+            display:flex; align-items:center; justify-content:center; padding:32px;
+            cursor:zoom-out; backdrop-filter:blur(4px);}
+  /* Required, and easy to miss: a display value in a stylesheet beats the
+     hidden attribute's UA display:none, so without this the overlay covers
+     the page permanently and the site renders as a blank dark rectangle. */
+  .lightbox[hidden]{display:none;}
+  .lightbox img{max-width:100%; max-height:100%; width:auto; height:auto;
+                border:1px solid var(--border); border-radius:10px;
+                box-shadow:0 40px 90px -30px rgba(0,0,0,.8);}
+  .lightbox-close{position:absolute; top:18px; right:22px; width:42px; height:42px;
+                  font-size:30px; line-height:1; color:var(--dim); cursor:pointer;
+                  background:transparent; border:1px solid var(--border-soft);
+                  border-radius:8px;}
+  .lightbox-close:hover{color:var(--text); border-color:var(--border);}
+  @media (max-width:620px){ .lightbox{padding:12px;} }
+
 
   .cta-band{background:linear-gradient(180deg,var(--felt-2),var(--felt-1)); border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); text-align:center; padding:88px 0;}
   .cta-band h2{font-size:clamp(28px,4vw,44px);}
