@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — PokerForge</title>
+<meta name="description" content="How PokerForge handles your data: everything stays on your own computer.">
+<meta property="og:title" content="PokerForge — Privacy Policy">
+<meta property="og:description" content="How PokerForge handles your data: everything stays on your own computer.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://pokerforge.app/privacy/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="/" style="text-decoration:none;">
+      <img src="/logo.png" width="32" height="32" alt="" decoding="async">
+      <span>Poker<span class="fg">Forge</span></span>
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#faq">FAQ</a>
+    </nav>
+    <a href="https://github.com/PokerForge/pokerforge/releases" class="btn btn-primary js-download">Download Free</a>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <article class="prose">
+      <h1>PokerForge — Privacy Policy</h1>
+      <p><em>Last updated: 2026-09-15</em></p>
+      <h2>The short version</h2>
+      <p>PokerForge runs entirely on your own computer. Your hand histories,
+      statistics and settings never leave your machine — there is no cloud
+      sync, no analytics, and no account needed to use the app.</p>
+      <p>The app makes no requests to track, profile or measure you. There are
+      only two requests it can make at all — a manual update check, and a
+      licence check if you're a paying subscriber — and neither ever includes
+      any of your poker data. Both are described in "Third-party services"
+      below. If you buy a subscription, see "If you buy a subscription" for
+      the limited data that involves.</p>
+      <h2>What data PokerForge stores</h2>
+      <p>PokerForge reads poker hand-history files that your poker client already
+      saves on your computer (or that you've exported yourself), and builds a
+      local database of statistics from them. This includes:</p>
+      <ul>
+      <li>Your own hole cards, actions, and results for hands you've played</li>
+      <li>The usernames and observable in-hand actions of other players who were
+        seated in those same hands ("villains"), and statistics derived from them</li>
+      <li>Settings you configure in the app (hero name, currency, which folders
+        to watch)</li>
+      </ul>
+      <p>All of this is stored in a single local database file on your computer, at
+      <code>%APPDATA%\SFPoker\</code> on Windows. <strong>Nothing is uploaded, transmitted, or
+      shared with PokerForge, its developer, or any third party.</strong></p>
+      <h2>Data about other players</h2>
+      <p>Because hand histories necessarily include other players at the table,
+      PokerForge's database contains other people's usernames and derived statistics
+      (e.g. how often they raise). This data:</p>
+      <ul>
+      <li>Comes only from hand histories your own poker client already gave you</li>
+      <li>Never leaves your computer</li>
+      <li>Is not used for any purpose other than showing you your own opponents'
+        tendencies within the app</li>
+      </ul>
+      <p>If you uninstall PokerForge, this data is not automatically deleted (see
+      "Deleting your data" below), since it lives separately from the installed
+      program files.</p>
+      <h2>Deleting your data</h2>
+      <p>All app data lives in one folder: <code>%APPDATA%\SFPoker\</code>. Deleting that
+      folder removes your entire database, settings, and log file. Uninstalling
+      the app itself does not delete this folder automatically.</p>
+      <h2>Third-party services</h2>
+      <p>PokerForge does not integrate with any analytics provider, crash-reporting
+      tool, or advertising network. Nothing about your usage is measured,
+      profiled or reported.</p>
+      <p>There are exactly two network requests the app can make. <strong>Neither ever
+      includes hand histories, hole cards, player names, your hero identity, or
+      anything else about your poker activity:</strong></p>
+      <ul>
+      <li><strong>Help &gt; Check for Updates</strong> — asks whether a newer release exists.
+        This happens only when you click that menu item. Nothing checks on a
+        timer or at startup.</li>
+      <li><strong>Licence validation</strong> — <em>only if you have entered a paid licence key.</em>
+        Once when the app starts, it asks our licence server whether that
+        subscription is still active. The request contains the licence key and
+        nothing else. If you have not entered a licence key, this request never
+        happens and the app makes no automatic network requests whatsoever.</li>
+      </ul>
+      <h2>If you buy a subscription</h2>
+      <p>Payment is handled by <strong>Stripe</strong>. Your card details go directly to Stripe
+      and are never seen, handled or stored by PokerForge — Stripe's own
+      privacy policy governs how they process them.</p>
+      <p>To deliver your licence key and check it's still valid, our licence server
+      stores only:</p>
+      <ul>
+      <li>the email address you provided at checkout</li>
+      <li>your licence key, and which Stripe subscription it belongs to</li>
+      <li>whether that subscription is active, and the date it is paid up to</li>
+      </ul>
+      <p>Your licence key is emailed to you using <strong>SendGrid</strong>, which processes
+      your email address in order to deliver that one message.</p>
+      <p>None of this is ever connected to your poker data. Your hands, statistics
+      and results stay on your own computer before, during and after a
+      subscription — subscribing does not upload anything, and cancelling does
+      not delete anything you've imported.</p>
+      <p>To have the above deleted, cancel your subscription and email
+      support@pokerforge.app.</p>
+      <h2>Changes to this policy</h2>
+      <p>Material changes will be noted in the in-app "What's New" popup shown
+      after an update, and in the version history published alongside each
+      release.</p>
+      <h2>Contact</h2>
+      <p>support@pokerforge.app</p>
+    </article>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="brand" style="font-size:20px;">
+          <img src="/logo.png" width="22" height="22" alt="" decoding="async">
+          <span>Poker<span class="fg">Forge</span></span>
+        </div>
+        <p class="foot-tag">Play. Analyse. Improve. A stats engine that stays on your machine.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <a href="/#features">Features</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/PokerForge/pokerforge/releases">All releases</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="mailto:support@pokerforge.app">Support</a>
+        <a href="https://github.com/PokerForge/pokerforge">GitHub</a>
+        <a href="https://github.com/PokerForge/pokerforge/issues/new">Report an issue</a>
+        <a href="https://github.com/PokerForge/pokerforge/blob/main/CHANGELOG.md">Changelog</a>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <a href="/privacy/">Privacy Policy</a>
+        <a href="/terms/">Terms of Use</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&copy; 2026 PokerForge</span>
+      <span>Not affiliated with PokerStars, GGPoker, Winning Poker Network or iPoker.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/download-link.js"></script>
+</body>
+</html>

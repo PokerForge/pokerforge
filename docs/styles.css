@@ -135,3 +135,15 @@
   .post:hover h3{color:var(--green-bright);}
   .empty-note{border:1px dashed var(--border); border-radius:12px; padding:44px 34px; max-width:760px; color:var(--dim);}
   .empty-note strong{color:var(--text); font-weight:600; display:block; margin-bottom:10px; font-size:16px;}
+
+  /* --- policy / long-form pages --- */
+  .prose{max-width:70ch;}
+  .prose h1{font-size:clamp(32px,4vw,44px); margin-bottom:10px;}
+  .prose h2{font-size:clamp(20px,2.2vw,25px); margin:44px 0 14px; padding-top:22px; border-top:1px solid var(--border-soft);}
+  .prose h2:first-of-type{border-top:none; padding-top:0;}
+  .prose p{margin:14px 0; color:var(--dim); font-size:15.5px;}
+  .prose p em{color:var(--dimmer); font-style:normal; font-family:var(--mono); font-size:13px;}
+  .prose ul{margin:14px 0; padding-left:20px; color:var(--dim); font-size:15.5px;}
+  .prose li{margin:8px 0;}
+  .prose strong{color:var(--text);}
+  .prose a{color:var(--green-bright);}
