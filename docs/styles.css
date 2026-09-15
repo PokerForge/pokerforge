@@ -137,7 +137,10 @@
   .empty-note strong{color:var(--text); font-weight:600; display:block; margin-bottom:10px; font-size:16px;}
 
   /* --- policy / long-form pages --- */
-  .prose{max-width:70ch;}
+  /* 70ch keeps the measure readable; margin:0 auto centres that column in
+     the 1160px .wrap, which otherwise leaves it pinned to the left with
+     half the page empty beside it. */
+  .prose{max-width:70ch; margin:0 auto;}
   .prose h1{font-size:clamp(32px,4vw,44px); margin-bottom:10px;}
   .prose h2{font-size:clamp(20px,2.2vw,25px); margin:44px 0 14px; padding-top:22px; border-top:1px solid var(--border-soft);}
   .prose h2:first-of-type{border-top:none; padding-top:0;}
