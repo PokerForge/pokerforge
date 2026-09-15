@@ -4,6 +4,27 @@ All notable changes to PokerForge are documented here. Version numbers
 follow `config/version.py`'s `APP_VERSION`; the "notes" field in a future
 Help > Check for Updates manifest would draw from whatever's newest here.
 
+## [1.0.0-beta.3] — 2026-09-15
+
+A new look, and groundwork under the hood.
+
+### New identity
+
+- PokerForge has a proper logo — a chip mark that now appears in the
+  app header, the taskbar, the installer, and on the website.
+- Windows caches shortcut icons, so an existing desktop shortcut may
+  keep showing the old icon for a while. A fresh install won't.
+
+### Under the hood
+
+- Licence keys are now cryptographically signed rather than
+  checksummed, so a key can be trusted offline and can't be forged by
+  editing a settings file. Nothing is enforced yet — the app remains
+  free and unrestricted during the beta.
+- Internal housekeeping: removed a long-superseded prototype and a
+  quantity of stale documentation. No stat, formula or calculation
+  changed — verified by comparing the compiled code before and after.
+
 ## [1.0.0-beta.2] — 2026-09-15
 
 More rooms, tournaments, and rakeback — plus PokerForge Intelligence,

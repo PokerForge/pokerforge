@@ -19,7 +19,7 @@
 ; VS Code, and Slack install by default on Windows).
 
 #define MyAppName "PokerForge"
-#define MyAppVersion "1.0.0-beta.2"
+#define MyAppVersion "1.0.0-beta.3"
 #define MyAppPublisher "PokerForge"
 #define MyAppExeName "PokerForge.exe"
 
