@@ -1,5 +1,5 @@
 """Global Cash/Tournament switch for the filter bar — a segmented "$ / T"
-pill (matching PT4/Hold'em Manager's own game-type switch) rather than a
+pill (the game-type switch convention trackers use) rather than a
 separate Tournaments tab: clicking it changes what Overview/Sessions/
 Stats/Population show, not which tab you're on."""
 from PyQt6.QtCore import Qt, pyqtSignal

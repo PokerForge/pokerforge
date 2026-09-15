@@ -6,10 +6,10 @@ re-scan the whole dataset hundreds of times; this does one pass instead,
 reusing analyze_preflop/analyze_showdown's per-hand result across every
 player in that hand.
 
-Validated against a real PT4 villain-pool export (villainreport.csv, 7,407
-villains): 9 spot-checked villains matched hand counts exactly in 7/9 cases
-(the other 2 differed only by hands played after the CSV was exported —
-more data, not a discrepancy), and every VPIP/PFR/3-Bet/Fold-to-3-Bet/WWSF
+Validated against an independently-computed villain pool (7,407 villains):
+9 spot-checked villains matched hand counts exactly in 7/9 cases (the other
+2 differed only by hands played after that snapshot was taken — more data,
+not a discrepancy), and every VPIP/PFR/3-Bet/Fold-to-3-Bet/WWSF
 stat matched to within 0.01-0.15 percentage points, several exact to 2
 decimals.
 """

@@ -1,7 +1,7 @@
 """Hand list shown when a stat card or a Sessions row is double-clicked —
-every hand behind it, laid out PT4-style. Every derived column (Facing PF
+every hand behind it, laid out as a hand grid. Every derived column (Facing PF
 Action, PF Act, F/T/R Act, Final Hand, Winner, Winning Hand) was validated
-hand-by-hand against a real PT4 CSV export before this dialog was built —
+hand-by-hand against real hands before this dialog was built —
 see core/hand_display.py's docstrings. Double-click a row to open the
 full hand in HandReplayDialog, same as before."""
 from PyQt6.QtCore import Qt, QPoint
@@ -80,7 +80,7 @@ def _card_row(cards: list[str]) -> QWidget:
 
 
 class HandListPanel(QWidget):
-    """The hand-list body (heading + PT4-style table) on its own, reusable
+    """The hand-list body (heading + hand-grid table) on its own, reusable
     both inside HandListDialog's popup and embedded directly into a page
     (see StatsTab's By Position section, which shows this inline rather
     than as a separate window)."""

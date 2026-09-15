@@ -16,7 +16,7 @@ to replay exact contribution caps and per-layer winners, which isn't
 cleanly recoverable from the hand-history data available). That's a
 disclosed, bounded approximation, not a silent one.
 
-Confirmed against a real PT4 per-opponent report: replacing the previous
+Confirmed against real per-opponent results: replacing the previous
 "attribute the whole hand's profit to any villain who was dealt in" logic
 with this fixed the cases where that produced numbers with the wrong sign.
 """

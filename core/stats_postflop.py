@@ -6,14 +6,14 @@ absolute new total this street; Call/Bet/Allin = incremental). A street's
 already held that status is also the one who bet/raised THIS street — a
 genuine continuation. If the street checks through, OR if a different player
 takes over the betting lead instead (e.g. a float/donk bet), the next
-street's aggressor resets to None. This was confirmed against real PT4
-output (a 364k-hand, 141-villain sample): PT4's own "CBet Turn" formula
-description is literally "...given that he continuation bet the flop", and
-testing this exact "chain" rule against that sample closed a real ~1-5pp gap
-that two other candidate models (an aggressor that persists through any
-checked-through street, and one pinned to the preflop raiser all hand) both
-made WORSE, not better. This deliberately excludes "delayed c-bet" (aggressor
-who checked one street then bets the next) as a separate, unbuilt stat.
+street's aggressor resets to None. This was settled empirically on a
+364k-hand, 141-villain sample: a turn c-bet is meaningfully "given that he
+continuation bet the flop", and testing this exact "chain" rule against that
+sample closed a real ~1-5pp gap that two other candidate models (an aggressor
+that persists through any checked-through street, and one pinned to the
+preflop raiser all hand) both made WORSE, not better. This deliberately
+excludes "delayed c-bet" (aggressor who checked one street then bets the
+next) as a separate, unbuilt stat.
 
 Note: fold-to-check-raise is tracked per street as a whole (did *a* check-raise
 happen this street, and did the original bettor fold when facing it) rather
@@ -45,8 +45,8 @@ class StreetFlags:
     faced_donk_opp: bool = False
     folded_to_donk: bool = False
     # Generic fold-to-bet-level: doesn't care who made the bet/raise or
-    # whether they'd checked before, unlike cbet/xr/donk above. PT4's own
-    # "Fold to F 2Bet" is explicitly this broader thing, not check-raise-only.
+    # whether they'd checked before, unlike cbet/xr/donk above. "Fold to
+    # F 2Bet" is this broader thing by convention, not check-raise-only.
     face_bet_opp: bool = False
     folded_to_bet: bool = False
     face_2bet_opp: bool = False
@@ -123,8 +123,8 @@ def analyze_postflop(hand: Hand, positions: dict[str, str] | None = None) -> dic
     folded: set[str] = set()
     prev_aggressor = _preflop_last_aggressor(hand)
     callers_last_street: set[str] = _preflop_callers_of_last_raise(hand)
-    # PT4's plain "Float F"/"Fold to F Float" are specifically a singly-raised
-    # pot stat (it has a separate "...in 3Bet Pot" variant for the rest) —
+    # "Float F"/"Fold to F Float" are conventionally singly-raised-pot
+    # stats, with a separate "...in 3Bet Pot" variant for the rest — so
     # a 3-bet+ preflop pot never contributes float opportunities here.
     float_eligible_pot = not is_3bet_plus_pot(hand)
 

@@ -63,8 +63,8 @@ QSplitter::handle {{ background:{BORDER}; }}
 def hand_axis_ticks(total):
     """Tick list for a pyqtgraph bottom 'Hands' axis that always ends on the
     period's real hand count, rather than pyqtgraph's auto-picked round
-    number (e.g. 500 instead of the actual 540) — matches PT4's graphs,
-    which label the axis end with the exact hand total."""
+    number (e.g. 500 instead of the actual 540). Labeling the axis end
+    with the exact hand total is what makes the graph readable."""
     if total <= 0:
         return [[(0, "0")]]
     raw_step = max(total / 5, 1)

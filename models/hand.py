@@ -24,7 +24,8 @@ class Hand:
     small_blind: Optional[float] = None
     big_blind: Optional[float] = None
     # Preserved pre-conversion by core.currency.convert_hands_to_usd, so the
-    # stakes label can stay in the original currency (matching PT4) even
+    # stakes label can stay in the original currency, as is conventional,
+    # even
     # though small_blind/big_blind/currency above get converted to USD for
     # BB/100 math (which must divide by a blind in the same currency as the
     # profit it's dividing).

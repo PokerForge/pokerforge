@@ -109,7 +109,7 @@ class OverviewTab(QWidget, AsyncRunner):
         self.hand_end_lbl.setStyleSheet(f"color:{DIM};font-size:10px;background:{BG2};padding:0 2px;")
         self.hand_end_lbl.hide()
 
-        # PT4-style movable summary box, floating over the plot.
+        # Movable summary box, floating over the plot.
         self.stats_box = DraggableStatsBox(self.plot)
         self.stats_box.set_row("hands", "Hands: —")
         self.stats_box.set_row("won", "Won: —", color=GREEN)
@@ -117,7 +117,7 @@ class OverviewTab(QWidget, AsyncRunner):
         self.stats_box.set_row("bb100", "BB/100: —", color=GREEN)
         self.stats_box.set_row("ev_bb100", "EV BB/100: —", color="#e3b341")
 
-        # PT4-style hover crosshair — shows every visible curve's value at
+        # Hover crosshair — shows every visible curve's value at
         # the hand index under the cursor, live as the mouse moves.
         self.crosshair = HoverCrosshair(self.plot, self._curve_specs, value_formatter=self._format_value)
 

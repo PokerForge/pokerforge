@@ -487,10 +487,10 @@ def position_breakdown_query(db, player_name: str, d_from: date | None = None, d
     Heads-up hands are stored as the distinct label 'BTN/SB' (needed
     elsewhere — core.position's postflop acting-order logic treats it
     like a button, not a small blind, since it acts LAST postflop) but
-    are folded into the 'SB' bucket here, matching a real PT4 by-position
-    export: SB's hand count only reconciled once 'BTN/SB' hands were
-    added to it (confirmed, not guessed — see core/position.py's
-    POSITION_LABELS comment for the sibling fix this same export drove)."""
+    are folded into the 'SB' bucket here: SB's hand count only reconciled
+    against real by-position totals once 'BTN/SB' hands were added to it
+    (confirmed, not guessed — see core/position.py's POSITION_LABELS
+    comment for the sibling fix the same reconciliation drove)."""
     where = ["player_name = ?"]
     params = [player_name]
     if d_from and d_to:
@@ -767,8 +767,8 @@ def _villain_graph_from_where(db, hero: str, where_sql: str, params: list):
     # "Vs Me" is a real per-hand pot settlement (core.settlement) rather
     # than crediting/blaming a villain for hero's ENTIRE hand result just
     # for being dealt in — that previous approach produced numbers with the
-    # wrong sign for most villains, confirmed against a real PT4
-    # per-opponent export. Settlement needs each hand's actions/winnings
+    # wrong sign for most villains, confirmed against real per-opponent
+    # results. Settlement needs each hand's actions/winnings
     # replayed, so those are bulk-loaded once for exactly the hands
     # involved here (not the whole database).
     unique_hand_ids = list(dict.fromkeys(r[0] for r in v_rows))
@@ -890,7 +890,7 @@ def hands_for_stat_query(db, player_name: str, stat_id: str,
     """Returns (hand_id, played_at, stakes_label, profit, ev) tuples for
     every hand where `player_name` "made" `stat_id` — the backing data for
     the hand-list dialog. The full hand (for replay, and for the rest of
-    the dialog's PT4-style columns) is bulk-loaded lazily via
+    the dialog's hand-grid columns) is bulk-loaded lazily via
     database.hand_loader.load_hands_bulk only once the dialog opens.
     `position` optionally narrows to one seat (see position_breakdown_query
     for the 'SB' includes-heads-up-BTN/SB convention this follows)."""

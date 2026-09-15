@@ -1,11 +1,10 @@
-"""Derives the PT4-style hand-history-grid columns (Facing PF Action, PF
-Act, per-street Act letters, Final Hand, Winner, Winning Hand) from a
-parsed Hand object.
+"""Derives the hand-history-grid columns (Facing PF Action, PF Act,
+per-street Act letters, Final Hand, Winner, Winning Hand) from a parsed
+Hand object.
 
-Every rule here was validated against a real PT4 CSV export
-(Reportforhandhistorydisplay.csv) cross-checked hand-by-hand against this
-app's own action log for the same hand_ids — not guessed. See the
-per-function notes for what was confirmed. `_is_raise_like` is imported
+Every rule here was verified hand-by-hand against this app's own action
+log for the same hand_ids — not guessed. See the per-function notes for
+the specific edge cases each one settles. `_is_raise_like` is imported
 from core.stats rather than reimplemented, so an Allin is classified as a
 raise/call identically to every other stat that already depends on it.
 """
@@ -32,9 +31,9 @@ SITE_LABELS = {
 def describe_hand_rank(cards: list[str]) -> str:
     """"One Pair, Nines" / "Two Pair, Aces and Tens" / "Straight, Jack
     High" / etc, from best_hand_rank's (category, *tiebreakers) tuple.
-    Every branch except Full House/Four of a Kind/Straight Flush (not
-    present in the validation export) matches confirmed real PT4 output
-    text exactly; those three follow the same, obvious naming pattern."""
+    Every branch except Full House/Four of a Kind/Straight Flush was
+    verified against real hands; those three appeared in no sample hand
+    and follow the same, obvious naming pattern."""
     rank = best_hand_rank(cards)
     cat = rank[0]
     name = _CATEGORY_NAME[cat]
@@ -53,10 +52,10 @@ def describe_hand_rank(cards: list[str]) -> str:
 
 def final_hand_text(hand: Hand, player_name: str) -> str:
     """"(folded preflop)" / "(did not show hand)" / a real hand
-    description — matches PT4 exactly: folding always wins regardless of
-    showdown status, and even a hand WON without a real contest (everyone
-    else folded) still reads "(did not show hand)", not the hero's actual
-    holding."""
+    description. Two rules that are easy to get wrong: folding always
+    wins regardless of showdown status, and even a hand WON without a
+    real contest (everyone else folded) still reads "(did not show
+    hand)", not the hero's actual holding."""
     fold_street = next((a.street for a in hand.actions
                          if a.player == player_name and a.action == 'Fold'), None)
     if fold_street:
@@ -91,8 +90,8 @@ _PF_LETTER = {'Fold': 'F', 'Call': 'C', 'Check': 'X', 'Raise': 'R'}
 
 
 def facing_and_pf_act(hand: Hand, player_name: str) -> tuple[str, str]:
-    """(Facing PF Action, PF Act) — validated hand-by-hand against a real
-    PT4 export: "Unopened Pot" (no calls/raises reached this seat yet),
+    """(Facing PF Action, PF Act) — validated hand-by-hand against real
+    hands: "Unopened Pot" (no calls/raises reached this seat yet),
     "1 Limper"/"2+ Limpers" (that many callers, no raise yet), "1 Raiser"
     (facing exactly one raise), "1 Raise & Caller(s)" (that raise has
     already been called by someone else too), "{N}Bet Cold" for 2+ raises

@@ -1,4 +1,4 @@
-"""Shared overlay widgets for pyqtgraph PlotWidgets: a PT4-style draggable
+"""Shared overlay widgets for pyqtgraph PlotWidgets: a draggable
 summary box, a camera button that copies the plot to the clipboard, and a
 hover crosshair that reads off each visible curve's value at the cursor's
 hand index. All positioned as real child QWidgets on top of the plot (not
@@ -31,7 +31,7 @@ def suggest_stats_box_prefer_bottom(total_series: list[float]) -> bool:
 
 class DraggableStatsBox(QFrame):
     """A small "label: value" panel that floats over a plot and can be
-    dragged anywhere within it, matching PT4's movable stats box. Rows are
+    dragged anywhere within it, as a movable stats box. Rows are
     added/updated by key via set_row(); a row can be hidden independently
     (e.g. when the user unchecks the curve it corresponds to) without
     disturbing the others."""
@@ -171,10 +171,10 @@ class ScreenshotButton(QToolButton):
 
 
 class HoverCrosshair(QObject):
-    """PT4-style hover readout: a vertical guide line plus a small tooltip
+    """Hover readout: a vertical guide line plus a small tooltip
     that reports every currently-visible curve's value at the hand index
     under the cursor, updating live as the mouse moves along the graph —
-    same idea as PT4's own graph crosshair.
+    the standard graph-crosshair idea.
 
     `curves` is the same (name, PlotDataItem, color) list the legend
     checkboxes are built from, so a curve the user has toggled off is

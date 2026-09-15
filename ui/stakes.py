@@ -6,9 +6,8 @@ from models.hand import Hand
 
 
 def stakes_label(hand: Hand) -> str:
-    """Stakes stay labeled in the hand's original currency (matching PT4's
-    own convention: it converts the money won, not the stake identity),
-    even though core.currency.convert_hands_to_usd has converted the
+    """Stakes stay labeled in the hand's original currency (the convention
+    is to convert the money won, not the stake identity), even though core.currency.convert_hands_to_usd has converted the
     hand's actual money fields to USD by the time this is called."""
     sb = hand.native_small_blind if hand.native_small_blind is not None else hand.small_blind
     bb = hand.native_big_blind if hand.native_big_blind is not None else hand.big_blind

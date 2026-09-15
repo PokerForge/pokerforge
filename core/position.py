@@ -10,10 +10,10 @@ from models.hand import Hand
 
 # Position labels going clockwise FROM the button, by number of active
 # players. The 4-handed seat after BB was originally labeled 'UTG', but
-# cross-checking a real PT4 by-position export (Statsallhandsthisyear.csv)
-# against this app's own numbers showed a ~6,822-hand gap between UTG and
-# CO that exactly matched the number of 4-handed hands hero played —
-# PT4 calls that seat 'CO' at 4-handed, not 'UTG'. Confirmed, not guessed.
+# reconciling a real by-position hand count against this app's own numbers
+# showed a ~6,822-hand gap between UTG and CO that exactly matched the
+# number of 4-handed hands hero played — that seat is conventionally 'CO'
+# at 4-handed, not 'UTG'. Confirmed, not guessed.
 POSITION_LABELS = {
     2: ['BTN/SB', 'BB'],
     3: ['BTN', 'SB', 'BB'],

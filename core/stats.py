@@ -66,7 +66,7 @@ def compute_invested(hand: Hand) -> dict[str, float]:
 @dataclass
 class PlayerHandFlags:
     # True unless this player is the BB and "walked" (won uncontested with
-    # zero preflop actions of their own) — PT4's VPIP/PFR denominator is
+    # zero preflop actions of their own) — the VPIP/PFR denominator is
     # "Number of Hands - Number of Walks", since a walked BB never had a
     # decision to make.
     vpip_pfr_opp: bool = True
@@ -135,7 +135,7 @@ def is_3bet_plus_pot(hand: Hand) -> bool:
     """Did preflop see at least a 3-bet (two or more raises)? Lets any
     existing postflop stat be re-aggregated split by this, with no new
     per-action tracking needed — just filter which hands go into the
-    aggregate (see e.g. "CBet Flop in 3Bet+ Pot" in PT4's own stat list)."""
+    aggregate (e.g. "CBet Flop in 3Bet+ Pot")."""
     committed: dict[str, float] = {}
     current_bet = 0.0
     raise_count = 0
@@ -161,22 +161,22 @@ def is_3bet_plus_pot(hand: Hand) -> bool:
 
 def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
     """Preflop raise-level tracking, generalized one level further than
-    3-bet: PT4's own "4-bet opportunity" turns out to be defined as exactly
-    the same population as "faced a 3-bet" (flg_p_4bet_opp AND
-    flg_p_3bet_def_opp) — whoever defends against a 3-bet already has the
-    option to 4-bet, fold, or call, so no separate tracking is needed for
-    the opportunity itself, only for whether their response was a raise.
+    3-bet: a "4-bet opportunity" turns out to be exactly the same
+    population as "faced a 3-bet" (flg_p_4bet_opp AND flg_p_3bet_def_opp)
+    — whoever defends against a 3-bet already has the option to 4-bet,
+    fold, or call, so no separate tracking is needed for the opportunity
+    itself, only for whether their response was a raise.
 
     "Faced a 3-bet"/"faced a 4-bet" apply to ANY active player whose
     decision point is the first time they see that raise level live — not
-    just the original opener/3-bettor. This was cross-checked against real
-    PT4 output for identical hand counts: PT4's plain "Fold to PF 3Bet" /
-    "4Bet PF" stats include players who never opened or called before
-    facing the re-raise cold (e.g. blinds acting after an open+3-bet
-    already happened before their turn) — a large fraction of the real
-    opportunities. PT4 does have a separate, narrower "...After Raise"
-    variant restricted to the opener, which is a different, more specific
-    stat this function doesn't compute.
+    just the original opener/3-bettor. That breadth is deliberate and was
+    checked against real hand counts: plain "Fold to PF 3Bet" / "4Bet PF"
+    have to include players who never opened or called before facing the
+    re-raise cold (e.g. blinds acting after an open+3-bet already happened
+    before their turn), which is a large fraction of the real
+    opportunities. The narrower "...After Raise" variant restricted to the
+    opener is a different, more specific stat this function doesn't
+    compute.
     """
     flags: dict[str, PlayerHandFlags] = {p.name: PlayerHandFlags() for p in hand.players}
     committed: dict[str, float] = {p.name: 0.0 for p in hand.players}
@@ -298,12 +298,11 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
         # Fold-to-3-bet / 4-bet-opportunity: the first time ANY active
         # player's decision point occurs while facing exactly one re-raise
         # (a live 3-bet) — not restricted to the original opener. Confirmed
-        # against real hand data cross-checked with PT4: PT4's plain "Fold
-        # to PF 3Bet" / "4Bet PF" stats count this broadly (including
-        # players who never opened or called before facing the 3-bet cold,
-        # e.g. blinds acting after an open+3bet already happened) — PT4
-        # has a separate, narrower "...After Raise" stat for the
-        # opener-only case, which is a different, more specific number.
+        # against real hand data: plain "Fold to PF 3Bet" / "4Bet PF" count
+        # this broadly (including players who never opened or called before
+        # facing the 3-bet cold, e.g. blinds acting after an open+3bet
+        # already happened). The narrower "...After Raise" stat for the
+        # opener-only case is a different, more specific number.
         if raise_level == 2 and a.player not in decided_faced_3bet:
             f.faced_3bet_opp = True
             decided_faced_3bet.add(a.player)
@@ -317,7 +316,7 @@ def analyze_preflop(hand: Hand) -> dict[str, PlayerHandFlags]:
             elif raise_like:
                 f.four_bet = True
 
-        # Fold-to-4-bet: PT4's stat is named "Fold to PF 4Bet+" — it covers a
+        # Fold-to-4-bet: "Fold to PF 4Bet+" covers a
         # player's first decision while facing a 4-bet OR HIGHER (a cold
         # 5-bet, 6-bet, etc. counts too if that's the first time they face
         # such a raise), not only an exact 4-bet.
@@ -490,7 +489,7 @@ def aggregate_player_stats(hands: list[Hand], player_name: str) -> Aggregate:
         # Convert this hand's profit to bb-units *before* averaging, not
         # after — averaging raw £ profit across hands played at different
         # stakes silently skews the result (this exact bug was found and
-        # fixed once already in the legacy PT4-based dashboard).
+        # fixed once already in the legacy dashboard).
         if hand.big_blind:
             invested = compute_invested(hand).get(player_name, 0.0)
             profit = hand.winnings.get(player_name, 0.0) - invested
@@ -561,8 +560,8 @@ def analyze_aggression(hand: Hand) -> dict[str, dict[str, AggressionCounts]]:
 
 def aggregate_aggression_stats(hands: list[Hand], player_name: str) -> dict[str, AggressionCounts]:
     """Returns per-street totals (PREFLOP/FLOP/TURN/RIVER) plus a 'TOTAL'
-    key that's the postflop-only sum (FLOP+TURN+RIVER), matching PT4's own
-    "Total AF"/"Total AFq" definition, which explicitly excludes preflop."""
+    key that's the postflop-only sum (FLOP+TURN+RIVER), matching the
+    standard "Total AF"/"Total AFq" definition, which excludes preflop."""
     totals = {s: AggressionCounts() for s in ('PREFLOP', 'FLOP', 'TURN', 'RIVER')}
     for hand in hands:
         if player_name not in {p.name for p in hand.players}:

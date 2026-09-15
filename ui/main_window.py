@@ -230,7 +230,7 @@ class VillainDetail(QWidget, AsyncRunner):
                               ("EV", self.c_ev, "#e3b341")]
         gl.addWidget(self.plot)
 
-        # PT4-style hover crosshair — shows every visible curve's value at
+        # Hover crosshair — shows every visible curve's value at
         # the hand index under the cursor, live as the mouse moves.
         self.crosshair = HoverCrosshair(self.plot, self._curve_specs, value_formatter=self._format_value)
 

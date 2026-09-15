@@ -1,4 +1,4 @@
-"""PT4-style animated hand replayer: an oval table with seats positioned
+"""Animated hand replayer: an oval table with seats positioned
 around it, hole cards revealed as the hand progresses, a running pot/board,
 step-by-step or auto-play controls, and a text action log — built directly
 from the already-parsed Hand/Player/Action data rather than re-parsing raw
@@ -45,10 +45,10 @@ def _extract_show_descriptions(raw_text: str | None) -> dict[str, str]:
 
 
 def _fmt_bb(amount: float, big_blind: float | None) -> str:
-    """PT4's own replayer displays every amount — stacks, pot, and action
-    sizes alike — in big blinds rather than currency, so this mirrors that
-    convention throughout instead of picking a currency symbol per hand's
-    (possibly mixed GBP/EUR) native stakes."""
+    """Every amount — stacks, pot, and action sizes alike — is shown in big
+    blinds rather than currency, which is the readable convention for a
+    replayer and avoids picking a currency symbol per hand's (possibly
+    mixed GBP/EUR) native stakes."""
     if not big_blind:
         return f"{amount:.2f}"
     return f"{amount / big_blind:.2f} BB"
@@ -140,11 +140,11 @@ def _card_widget(card: str) -> QWidget:
     hand. Depth comes from the border/gradient alone instead.
 
     Style is a "gem badge" (glossy rounded-square tile, bold rank letter,
-    small sparkle accent) matching PT4's own hole-card badges, with one
-    difference: PT4's badges are a flat color per PLAYER, which drops suit
-    information entirely — this keeps suit info by using a distinct gradient
-    per suit instead, via child-widget positioning (not a layout) so the
-    rank stays exactly centered regardless of font size.
+    small sparkle accent). Where the usual treatment is a flat color per
+    PLAYER, which drops suit information entirely, this keeps suit info by
+    using a distinct gradient per suit instead, via child-widget
+    positioning (not a layout) so the rank stays exactly centered
+    regardless of font size.
     """
     rank, suit = card[:-1], card[-1]
     light, dark = _CARD_GRADIENT.get(suit, _CARD_GRADIENT['♠'])
@@ -273,8 +273,8 @@ class _CardRow(QWidget):
 
 class SeatWidget(QWidget):
     """A floating name/stack pill with its cards shown ABOVE it once
-    revealed (PT4 shows a player's hole cards as a badge hovering over
-    their seat, not tucked inside a bordered card alongside their name).
+    revealed — a badge hovering over the seat, rather than tucked inside
+    a bordered card alongside the name.
 
     Cards and pill are positioned manually (not via a QVBoxLayout) because
     Qt's box layouts don't honor negative setSpacing() — it silently falls
@@ -341,7 +341,7 @@ class SeatWidget(QWidget):
         self.pill.setFixedSize(176, pill_h)
         self.pill.move(0, self.height() - pill_h)
 
-        # No face-down placeholders — PT4 shows nothing for a seat until it
+        # No face-down placeholders — nothing is shown for a seat until it
         # actually reveals cards at showdown, rather than a generic card back.
         self.cards = _CardRow()
         self.cards.setParent(self)
@@ -450,7 +450,7 @@ class ChipStack(QWidget):
 class BetChip(QWidget):
     """A poker-chip stack + amount, shown on the felt between a player's
     seat and the pot for their CURRENT STREET's total commitment — the same
-    "chips out in front of you" convention PT4 uses, separate from the
+    "chips out in front of you" convention, separate from the
     pill's own running stack total. Sizes itself explicitly (like
     _CardRow) rather than via layout sizeHint(), for the same reason."""
     def __init__(self):
@@ -483,7 +483,7 @@ class BetChip(QWidget):
 
 class TableWidget(QWidget):
     """Owns the seats AND the pot/board display, both positioned in the
-    center of the oval — matching PT4's layout, where the pot total and the
+    center of the oval — the conventional layout, where the pot total and the
     community cards sit inside the table graphic itself rather than below
     it as a separate row."""
     def __init__(self, hand: Hand, hero: str):
@@ -515,7 +515,7 @@ class TableWidget(QWidget):
             self.bet_chips[p.name] = chip
 
         # Dealer button — a small marker sitting just inside whoever holds
-        # the BTN (or BTN/SB heads-up) seat, matching PT4's chip-style "D".
+        # the BTN (or BTN/SB heads-up) seat, as a chip-style "D".
         self.dealer_name = next((n for n, pos in positions.items() if pos in ('BTN', 'BTN/SB')), None)
         self.dealer_btn = QLabel("D")
         self.dealer_btn.setParent(self)
@@ -625,7 +625,7 @@ class TableWidget(QWidget):
         radius = felt_rect.height() / 2
 
         # Wooden rail behind the felt — a stadium shape (flat top/bottom,
-        # rounded ends) rather than a plain ellipse, matching PT4's table.
+        # rounded ends) rather than a plain ellipse, as a real table is.
         rail_grad = QLinearGradient(rail_rect.topLeft(), rail_rect.bottomLeft())
         rail_grad.setColorAt(0.0, QColor("#5a3a24"))
         rail_grad.setColorAt(0.5, QColor("#3d2717"))
@@ -710,9 +710,9 @@ class HandReplayDialog(QDialog):
         bottom = QHBoxLayout()
         bottom.setSpacing(12)
 
-        # PT4's own log panel is a plain light box, not styled to match the
-        # app's dark theme — matching that directly rather than a dark
-        # QTextEdit reads as more "authentically PT4" than staying on-brand.
+        # A plain light box rather than a dark QTextEdit: the action log
+        # is dense reference text, and reads better on a light ground even
+        # though the rest of the app is dark.
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(100)

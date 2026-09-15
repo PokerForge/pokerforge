@@ -1,6 +1,6 @@
 """PokerForge — the real application shell: header, period/stakes filter bar,
 and tabs (Overview, Sessions, Stats, Population), matching the visual
-structure of the original PT4-based dashboard.
+structure of the original dashboard.
 
 Hand histories are parsed once into memory (for the villain-profile and
 hand-replayer paths, which still work directly over Hand objects), then
