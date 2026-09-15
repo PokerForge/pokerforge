@@ -5,7 +5,7 @@ against real blind-post ground truth: 100% match on SB, 244738/244739 on BB
 across the full 244,739-hand dataset) and the same raise-tracking convention
 already proven in core/stats.py's analyze_preflop.
 
-Definitions follow PT4's own formulas (docs/pt4_stat_raw_decode.txt):
+Definitions follow the conventions every tracker uses for these stats:
   - Steal opportunity: player is in a steal position (CO/BTN/SB) and is the
     first to voluntarily act (everyone before them folded — no limps, no
     raises yet).

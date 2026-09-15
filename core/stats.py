@@ -522,7 +522,8 @@ def analyze_aggression(hand: Hand) -> dict[str, dict[str, AggressionCounts]]:
     """Per-player, per-street counts of aggressive (bet/raise) vs passive
     (call) vs folding actions, feeding AF (bet+raise / call) and AFq
     (bet+raise / all non-check actions). Checks are excluded from both, per
-    PT4's own formula (confirmed via docs/pt4_stat_raw_decode.txt)."""
+    the standard industry definition, verified against this project's own
+    hand histories."""
     result: dict[str, dict[str, AggressionCounts]] = {s: {} for s in ('PREFLOP', 'FLOP', 'TURN', 'RIVER')}
     committed: dict[tuple, float] = {}
     current_bet: dict[str, float] = {s: 0.0 for s in result}

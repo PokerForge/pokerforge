@@ -9,7 +9,7 @@ aggressor checks back, and the out-of-position caller of their raise takes
 the betting lead. That needs the preflop aggressor's identity to persist
 across a fully-checked street, so it's tracked fresh here.
 
-Per PT4's own formula (docs/pt4_stat_raw_decode.txt):
+The standard definition of a probe bet:
   - Probe Turn opportunity: player called the (single) preflop raise, is out
     of position on that raiser, the flop checks through entirely (everyone
     checks — no bets), and it's their turn to act on the turn before anyone
